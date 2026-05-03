@@ -145,6 +145,7 @@ function MapData.ScanAndLoadImages(folder)
                     imagePath = imagePath,
                     color = { 100, 100, 100, 255 },
                     tag = "",
+                    renderMode = tile.renderMode or "vertical",
                 }
                 if tile.frames then
                     tileData.frames = tile.frames

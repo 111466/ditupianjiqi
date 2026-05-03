@@ -223,9 +223,47 @@ local function drawImageTile(nvg, cx, cy, imagePath, flipH, tileType)
     local drawW = (sourceRect and sourceRect.w or imgInfo.w) * pxScale
     local drawH = (sourceRect and sourceRect.h or imgInfo.h) * pxScale
 
+    local renderMode = tileType and tileType.renderMode or "vertical"
+
+    if renderMode == "flat" then
+        -- 将正视角的正方形贴图，拍平到等距菱形上
+        nvgSave(nvg)
+        nvgTranslate(nvg, cx, cy)
+        nvgScale(nvg, 1, 0.5)        -- 压扁一半
+        nvgRotate(nvg, math.pi / 4)  -- 旋转45度
+        
+        -- 水平翻转：现在以0,0为中心
+        if flipH then
+            nvgScale(nvg, -1, 1)
+        end
+
+        local drawX = -drawW / 2
+        local drawY = -drawH / 2
+        local paintW = imgInfo.w * pxScale
+        local paintH = imgInfo.h * pxScale
+        local paintX = sourceRect and (drawX - sourceRect.x * pxScale) or drawX
+        local paintY = sourceRect and (drawY - sourceRect.y * pxScale) or drawY
+
+        local paint = nvgImagePattern(nvg, paintX, paintY, paintW, paintH, 0, handle, 1.0)
+        nvgBeginPath(nvg)
+        nvgRect(nvg, drawX, drawY, drawW, drawH)
+        nvgFillPaint(nvg, paint)
+        nvgFill(nvg)
+        nvgRestore(nvg)
+        return
+    end
+
+    -- 默认垂直模式 (renderMode == "vertical")
     -- 底部锚定：图片底边对齐菱形底点 (cx, cy + tileHH)
     local drawX = cx - oneTileW / 2
-    local drawY = (cy + tileHH) - drawH
+    local drawY
+    if renderMode == "floor" then
+        -- 如果已经是等距视角的菱形贴图，则中心对齐
+        drawY = cy - drawH / 2
+    else
+        -- 垂直物体（如树木），底部对齐
+        drawY = (cy + tileHH) - drawH
+    end
 
     -- 水平翻转：以图片绘制中心 X 为轴镜像
     if flipH then
@@ -287,9 +325,17 @@ local function drawImageTileTD(nvg, cx, cy, imagePath, flipH, tileType)
     local pxScale = tdTileW / BASE_PX_PER_TILE
     local drawW = (sourceRect and sourceRect.w or imgInfo.w) * pxScale
     local drawH = (sourceRect and sourceRect.h or imgInfo.h) * pxScale
+    
+    local renderMode = tileType and tileType.renderMode or "vertical"
+    
     -- 底部锚定
     local drawX = cx - tdTileW / 2
-    local drawY = (cy + tdTileH / 2) - drawH
+    local drawY
+    if renderMode == "flat" or renderMode == "floor" then
+        drawY = cy - drawH / 2
+    else
+        drawY = (cy + tdTileH / 2) - drawH
+    end
 
     -- 水平翻转：以图片绘制中心 X 为轴镜像
     if flipH then
