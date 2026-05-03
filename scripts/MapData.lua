@@ -108,23 +108,36 @@ function MapData.ScanAndLoadImages(folder)
 
     -- 读取 manifest.json 清单文件（放在 assets/<folder>/manifest.json）
     local manifestPath = folder .. "/manifest.json"
-    if not cache:Exists(manifestPath) then
-        print(string.format("[MapData] 未找到清单文件: %s", manifestPath))
-        return 0
+    local fsPath = "assets/" .. manifestPath
+    local jsonStr = ""
+
+    -- 优先从文件系统直接读取，避免缓存导致无法读取最新修改
+    local file = File(fsPath, FILE_READ)
+    if file and file:IsOpen() then
+        jsonStr = file:ReadString()
+        file:Close()
+    else
+        if not cache:Exists(manifestPath) then
+            print(string.format("[MapData] 未找到清单文件: %s", manifestPath))
+            return 0
+        end
+        file = cache:GetFile(manifestPath)
+        if not file then
+            print(string.format("[MapData] 无法打开清单文件: %s", manifestPath))
+            return 0
+        end
+        jsonStr = file:ReadString()
+        file:Close()
     end
 
-    local file = cache:GetFile(manifestPath)
-    if not file then
-        print(string.format("[MapData] 无法打开清单文件: %s", manifestPath))
-        return 0
+    -- 移除可能存在的 UTF-8 BOM，防止 cjson 解析失败
+    if jsonStr:sub(1, 3) == "\239\187\191" then
+        jsonStr = jsonStr:sub(4)
     end
-
-    local jsonStr = file:ReadString()
-    file:Close()
 
     local ok, fileList = pcall(cjson.decode, jsonStr)
     if not ok or type(fileList) ~= "table" then
-        print("[MapData] 清单文件 JSON 解析失败")
+        print("[MapData] 清单文件 JSON 解析失败: " .. tostring(fileList))
         return 0
     end
 
