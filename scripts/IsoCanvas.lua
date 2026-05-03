@@ -230,6 +230,10 @@ local function drawImageTile(nvg, cx, cy, imagePath, flipH, tileType)
         nvgSave(nvg)
         nvgTranslate(nvg, cx, cy)
         nvgScale(nvg, 1, 0.5)        -- 压扁一半
+        
+        -- 补偿旋转45度带来的对角线放大 (1 / math.sqrt(2))
+        nvgScale(nvg, 0.70710678, 0.70710678)
+        
         nvgRotate(nvg, math.pi / 4)  -- 旋转45度
         
         -- 水平翻转：现在以0,0为中心
