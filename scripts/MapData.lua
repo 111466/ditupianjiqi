@@ -94,6 +94,49 @@ function MapData.ClearImageTiles()
     end
     MapData.imageTileCount = 0
     MapData.imageTileIDs = {}
+    MapData.paletteItems = {}
+end
+
+--- 恢复图片瓦片注册表（用于加载/导入时重建 paletteItems）
+---@param registry table
+function MapData.RestoreImageRegistry(registry)
+    MapData.ClearImageTiles()
+    if not registry then return end
+    
+    local tilesetsByPath = {}
+    
+    for _, reg in ipairs(registry) do
+        local regId = MapData.RegisterImageTile(reg.name, reg.imagePath)
+        if regId then
+            local t = MapData.TILE_TYPES[regId]
+            if reg.tag and reg.tag ~= "" then
+                t.tag = reg.tag
+            end
+            if reg.frames then
+                t.frames = reg.frames
+                t.fps = reg.fps
+            elseif reg.rect then
+                t.rect = reg.rect
+            elseif reg.region then
+                t.rect = reg.region
+            end
+            
+            if t.rect then
+                if not tilesetsByPath[t.imagePath] then
+                    tilesetsByPath[t.imagePath] = {
+                        type = "tileset",
+                        imagePath = t.imagePath,
+                        name = t.imagePath:match("([^/]+)$"):gsub("%.[^.]+$", ""),
+                        tiles = {}
+                    }
+                    table.insert(MapData.paletteItems, tilesetsByPath[t.imagePath])
+                end
+                table.insert(tilesetsByPath[t.imagePath].tiles, { id = regId, rect = t.rect, frames = t.frames })
+            else
+                table.insert(MapData.paletteItems, { type = "single", id = regId })
+            end
+        end
+    end
 end
 
 --- 扫描文件夹并批量注册图片瓦片（通过读取 manifest.json 清单）
@@ -150,10 +193,17 @@ function MapData.ScanAndLoadImages(folder)
             local resPath = folder .. "/" .. item
             -- 去掉扩展名作为显示名
             local displayName = item:gsub("%.[^.]+$", "")
-            MapData.RegisterImageTile(displayName, resPath)
+            local id = MapData.RegisterImageTile(displayName, resPath)
+            table.insert(MapData.paletteItems, { type = "single", id = id })
             count = count + 1
         elseif type(item) == "table" and item.type == "tileset" then
             local imagePath = folder .. "/" .. item.image
+            local tileset = {
+                type = "tileset",
+                imagePath = imagePath,
+                name = item.image:gsub("%.[^.]+$", ""),
+                tiles = {}
+            }
             for _, tile in ipairs(item.tiles or {}) do
                 local id = MapData.IMAGE_TILE_BASE + MapData.imageTileCount
                 local tileData = {
@@ -172,13 +222,22 @@ function MapData.ScanAndLoadImages(folder)
                 MapData.TILE_TYPES[id] = tileData
                 MapData.imageTileCount = MapData.imageTileCount + 1
                 MapData.imageTileIDs[#MapData.imageTileIDs + 1] = id
+                
+                table.insert(tileset.tiles, { id = id, rect = tileData.rect, frames = tileData.frames })
                 count = count + 1
             end
+            table.insert(MapData.paletteItems, tileset)
         end
     end
 
     print(string.format("[MapData] 已从 '%s' 加载 %d 张图片瓦片", folder, count))
     return count
+end
+
+--- 获取调色板项目列表
+---@return table items
+function MapData.GetPaletteItems()
+    return MapData.paletteItems or {}
 end
 
 --- 获取所有图片瓦片 ID 列表
@@ -1122,23 +1181,8 @@ function MapData.Load()
 
     -- 重建图片瓦片注册表（如果存档中有）
     if saveData.imageRegistry then
-        MapData.ClearImageTiles()
         MapData.imageFolder = saveData.imageFolder or ""
-        for _, reg in ipairs(saveData.imageRegistry) do
-            local regId = MapData.RegisterImageTile(reg.name, reg.imagePath)
-            local t = MapData.TILE_TYPES[regId]
-            -- 恢复 tag
-            if reg.tag and reg.tag ~= "" then
-                t.tag = reg.tag
-            end
-            -- 恢复 tileset 片段数据
-            if reg.frames then
-                t.frames = reg.frames
-                t.fps = reg.fps
-            elseif reg.rect then
-                t.rect = reg.rect
-            end
-        end
+        MapData.RestoreImageRegistry(saveData.imageRegistry)
     end
 
     -- 恢复颜色瓦片自定义属性（name/tag）
@@ -1414,24 +1458,8 @@ function MapData.LoadFromNamedFile(filename)
 
     -- 恢复图片瓦片
     if saveData.imageRegistry then
-        MapData.ClearImageTiles()
         MapData.imageFolder = saveData.imageFolder or ""
-        for _, reg in ipairs(saveData.imageRegistry) do
-            local regId = MapData.RegisterImageTile(reg.name, reg.imagePath)
-            if regId then
-                local t = MapData.TILE_TYPES[regId]
-                if reg.tag and reg.tag ~= "" then
-                    t.tag = reg.tag
-                end
-                -- 恢复 tileset 片段数据
-                if reg.frames then
-                    t.frames = reg.frames
-                    t.fps = reg.fps
-                elseif reg.rect then
-                    t.rect = reg.rect
-                end
-            end
-        end
+        MapData.RestoreImageRegistry(saveData.imageRegistry)
     end
 
     -- 恢复颜色瓦片自定义属性

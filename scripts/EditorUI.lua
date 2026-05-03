@@ -167,6 +167,8 @@ end
 -- 瓦片选择
 -- ============================================================================
 
+local tilesetButtons = {}
+
 local function updateTileButtons()
     for id, btn in pairs(tileButtons) do
         btn:SetStyle({
@@ -174,6 +176,22 @@ local function updateTileButtons()
                 and { 255, 255, 255, 255 }
                 or { 80, 80, 90, 255 },
             borderWidth = id == selectedTileID and 2 or 1,
+        })
+    end
+
+    for name, btn in pairs(tilesetButtons) do
+        local active = false
+        if btn.props._tileset and btn.props._tileset.tiles then
+            for _, tile in ipairs(btn.props._tileset.tiles) do
+                if tile.id == selectedTileID then
+                    active = true
+                    break
+                end
+            end
+        end
+        btn:SetStyle({
+            borderColor = active and { 255, 255, 255, 255 } or { 80, 80, 90, 255 },
+            borderWidth = active and 2 or 1,
         })
     end
 end
@@ -523,14 +541,8 @@ local function CreateToolbar()
                     if saveData.height then MapData.MAP_H = saveData.height end
                     if saveData.showGrid ~= nil then MapData.showGrid = saveData.showGrid end
                     if saveData.imageRegistry then
-                        MapData.ClearImageTiles()
                         MapData.imageFolder = saveData.imageFolder or ""
-                        for _, reg in ipairs(saveData.imageRegistry) do
-                            local regId = MapData.RegisterImageTile(reg.name, reg.imagePath)
-                            if regId and reg.tag and reg.tag ~= "" then
-                                MapData.TILE_TYPES[regId].tag = reg.tag
-                            end
-                        end
+                        MapData.RestoreImageRegistry(saveData.imageRegistry)
                     end
                     if saveData.tileCustomizations then
                         for _, c in ipairs(saveData.tileCustomizations) do
@@ -747,24 +759,202 @@ local function CreateTileButton(tileID)
     return btn
 end
 
+local showTilesetModal = nil
+local TilesetButtonWidget = nil
+
+local function ensureTilesetButtonWidget()
+    if TilesetButtonWidget then return end
+    local Widget = require("urhox-libs/UI/Core/Widget")
+    TilesetButtonWidget = Widget:Extend("TilesetButtonWidget")
+
+    function TilesetButtonWidget:Render(nvg)
+        self:RenderFullBackground(nvg)
+
+        local l = self:GetAbsoluteLayout()
+        local imagePath = self.props._imagePath
+        if imagePath then
+            if not imageTileButtonCache[imagePath] then
+                imageTileButtonCache[imagePath] = nvgCreateImage(nvg, imagePath, 0)
+            end
+            local handle = imageTileButtonCache[imagePath]
+            if handle and handle ~= 0 then
+                local pad = 4
+                local imgX = l.x + pad
+                local imgY = l.y + pad
+                local imgW = l.w - pad * 2
+                local imgH = l.h - pad * 2
+                
+                if not imageSizeCache[handle] then
+                    local w, h = nvgImageSize(nvg, handle)
+                    imageSizeCache[handle] = { w = w, h = h }
+                end
+                local imgInfo = imageSizeCache[handle]
+                
+                -- scale to fit
+                local scaleX = imgW / imgInfo.w
+                local scaleY = imgH / imgInfo.h
+                local scale = math.min(scaleX, scaleY)
+                
+                local drawW = imgInfo.w * scale
+                local drawH = imgInfo.h * scale
+                local drawX = imgX + (imgW - drawW) / 2
+                local drawY = imgY + (imgH - drawH) / 2
+                
+                local paint = nvgImagePattern(nvg, drawX, drawY, drawW, drawH, 0, handle, 1.0)
+                nvgBeginPath(nvg)
+                nvgRoundedRect(nvg, drawX, drawY, drawW, drawH, 3)
+                nvgFillPaint(nvg, paint)
+                nvgFill(nvg)
+            else
+                nvgBeginPath(nvg)
+                nvgRoundedRect(nvg, l.x + 4, l.y + 4, l.w - 8, l.h - 8, 3)
+                nvgFillColor(nvg, nvgRGBA(80, 80, 80, 200))
+                nvgFill(nvg)
+            end
+        end
+    end
+end
+
+local function CreateTilesetButton(tileset)
+    ensureTilesetButtonWidget()
+
+    local btn = TilesetButtonWidget {
+        width = 44,
+        height = 44,
+        backgroundColor = { 50, 52, 58, 255 },
+        borderRadius = 6,
+        borderWidth = 1,
+        borderColor = { 80, 80, 90, 255 },
+        _imagePath = tileset.imagePath,
+        _tileset = tileset,
+
+        onClick = function()
+            showTilesetModal(tileset)
+        end,
+    }
+    
+    tilesetButtons[tileset.name] = btn
+    return btn
+end
+
+showTilesetModal = function(tileset)
+    local modal = UI.Modal {
+        title = "图集: " .. tileset.name,
+        size = "lg",
+        closeOnOverlay = true,
+        closeOnEscape = true,
+        showCloseButton = true,
+        onClose = function(self) self:Destroy() end,
+    }
+
+    local maxW = 0
+    local maxH = 0
+    for _, tile in ipairs(tileset.tiles) do
+        if tile.rect then
+            if tile.rect.x + tile.rect.w > maxW then maxW = tile.rect.x + tile.rect.w end
+            if tile.rect.y + tile.rect.h > maxH then maxH = tile.rect.y + tile.rect.h end
+        end
+    end
+    
+    if maxW == 0 or maxH == 0 then
+        maxW = 512
+        maxH = 512
+    end
+
+    local container = UI.Panel {
+        width = maxW,
+        height = maxH,
+        position = "relative",
+    }
+
+    for _, tile in ipairs(tileset.tiles) do
+        if tile.rect then
+            local btn = UI.Button {
+                position = "absolute",
+                left = tile.rect.x,
+                top = tile.rect.y,
+                width = tile.rect.w,
+                height = tile.rect.h,
+                backgroundColor = { 0, 0, 0, 0 },
+                hoverColor = { 255, 255, 255, 60 },
+                activeColor = { 255, 255, 255, 100 },
+                borderColor = { 255, 255, 255, 100 },
+                borderWidth = 1,
+                onClick = function()
+                    selectTile(tile.id)
+                    modal:Close()
+                end
+            }
+            container:AddChild(btn)
+        end
+    end
+
+    local TilesetBackgroundWidget = UI.Core.Widget:Extend("TilesetBackgroundWidget")
+    function TilesetBackgroundWidget:Render(nvg)
+        self:RenderFullBackground(nvg)
+        local l = self:GetAbsoluteLayout()
+        if not imageTileButtonCache[tileset.imagePath] then
+            imageTileButtonCache[tileset.imagePath] = nvgCreateImage(nvg, tileset.imagePath, 0)
+        end
+        local handle = imageTileButtonCache[tileset.imagePath]
+        if handle and handle ~= 0 then
+            local iw, ih = nvgImageSize(nvg, handle)
+            local paint = nvgImagePattern(nvg, l.x, l.y, iw, ih, 0, handle, 1.0)
+            nvgBeginPath(nvg)
+            nvgRect(nvg, l.x, l.y, l.w, l.h)
+            nvgFillPaint(nvg, paint)
+            nvgFill(nvg)
+        end
+    end
+
+    local bgPanel = TilesetBackgroundWidget {
+        width = maxW,
+        height = maxH,
+        children = { container }
+    }
+
+    modal:AddContent(UI.Panel {
+        width = "100%",
+        maxHeight = 600,
+        overflow = "scroll",
+        alignItems = "center",
+        justifyContent = "center",
+        padding = 10,
+        children = { bgPanel }
+    })
+
+    modal:Open()
+end
+
 --- 重建图片瓦片调色板（扫描后调用）
 rebuildImagePalette = function()
     if not imagePaletteGrid then return end
 
     -- 清空旧按钮
     imagePaletteGrid:RemoveAllChildren()
+    
+    for id, _ in pairs(tileButtons) do
+        if MapData.IsImageTile(id) then
+            tileButtons[id] = nil
+        end
+    end
+    tilesetButtons = {}
 
-    local imageIDs = MapData.GetImageTileIDs()
-    if #imageIDs == 0 then
+    local items = MapData.GetPaletteItems()
+    if #items == 0 then
         imagePaletteSection:SetStyle({ display = "none" })
         return
     end
 
     imagePaletteSection:SetStyle({ display = "flex" })
 
-    -- 创建图片瓦片按钮并逐个添加
-    for _, id in ipairs(imageIDs) do
-        imagePaletteGrid:AddChild(CreateTileButton(id))
+    -- 创建瓦片/图集按钮并逐个添加
+    for _, item in ipairs(items) do
+        if item.type == "single" then
+            imagePaletteGrid:AddChild(CreateTileButton(item.id))
+        elseif item.type == "tileset" then
+            imagePaletteGrid:AddChild(CreateTilesetButton(item))
+        end
     end
 
     -- 更新选中高亮
