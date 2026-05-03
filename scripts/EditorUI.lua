@@ -837,15 +837,29 @@ local function CreateTilesetButton(tileset)
     return btn
 end
 
+local activeTilesetPanel = nil
+local activeTilesetData = nil
+local tilesetDrag = {
+    isDragging = false,
+    startX = 0, startY = 0,
+    panelStartX = 0, panelStartY = 0
+}
+
+local function closeTilesetPanel()
+    if activeTilesetPanel then
+        activeTilesetPanel:Destroy()
+        activeTilesetPanel = nil
+        activeTilesetData = nil
+    end
+end
+
 showTilesetModal = function(tileset)
-    local modal = UI.Modal {
-        title = "图集: " .. tileset.name,
-        size = "lg",
-        closeOnOverlay = true,
-        closeOnEscape = true,
-        showCloseButton = true,
-        onClose = function(self) self:Destroy() end,
-    }
+    -- 如果已经打开了同一个图集，就不用再开了；否则先关掉旧的
+    if activeTilesetData and activeTilesetData.name == tileset.name then
+        return
+    end
+    closeTilesetPanel()
+    activeTilesetData = tileset
 
     local maxW = 0
     local maxH = 0
@@ -882,7 +896,6 @@ showTilesetModal = function(tileset)
                 borderWidth = 1,
                 onClick = function()
                     selectTile(tile.id)
-                    modal:Close()
                 end
             }
             container:AddChild(btn)
@@ -914,17 +927,84 @@ showTilesetModal = function(tileset)
         children = { container }
     }
 
-    modal:AddContent(UI.Panel {
-        width = "100%",
-        maxHeight = 600,
-        overflow = "scroll",
-        alignItems = "center",
-        justifyContent = "center",
-        padding = 10,
-        children = { bgPanel }
-    })
+    -- 构建悬浮窗（带标题栏拖拽）
+    activeTilesetPanel = UI.Panel {
+        position = "absolute",
+        left = graphics.width / UI.GetScale() / 2 - math.min(maxW, 600) / 2,
+        top = graphics.height / UI.GetScale() / 2 - math.min(maxH, 600) / 2,
+        backgroundColor = { 40, 42, 48, 255 },
+        borderColor = { 80, 80, 90, 255 },
+        borderWidth = 1,
+        borderRadius = 6,
+        flexDirection = "column",
+        children = {
+            -- 标题栏（可拖拽）
+            UI.Panel {
+                height = 30,
+                backgroundColor = { 30, 32, 38, 255 },
+                flexDirection = "row",
+                alignItems = "center",
+                paddingLeft = 10,
+                paddingRight = 10,
+                children = {
+                    UI.Label {
+                        text = "图集: " .. tileset.name,
+                        fontSize = 12,
+                        fontColor = { 200, 210, 230, 255 },
+                        flexGrow = 1,
+                    },
+                    UI.Button {
+                        text = "X",
+                        width = 24, height = 24,
+                        fontSize = 12,
+                        backgroundColor = { 0, 0, 0, 0 },
+                        hoverColor = { 200, 50, 50, 255 },
+                        textColor = { 150, 150, 150, 255 },
+                        onClick = function() closeTilesetPanel() end
+                    }
+                }
+            },
+            -- 滚动内容区
+            UI.Panel {
+                width = math.min(maxW + 20, 600),
+                height = math.min(maxH + 20, 600),
+                overflow = "scroll",
+                padding = 10,
+                children = { bgPanel }
+            }
+        }
+    }
+    
+    -- 手动绑定拖拽事件到标题栏
+    local titleBar = activeTilesetPanel.children[1]
+    
+    titleBar.onPointerDown = function(self, event)
+        tilesetDrag.isDragging = true
+        tilesetDrag.startX = event.x
+        tilesetDrag.startY = event.y
+        tilesetDrag.panelStartX = activeTilesetPanel.props.left
+        tilesetDrag.panelStartY = activeTilesetPanel.props.top
+        return true
+    end
+    
+    titleBar.onPointerMove = function(self, event)
+        if tilesetDrag.isDragging then
+            local dx = event.x - tilesetDrag.startX
+            local dy = event.y - tilesetDrag.startY
+            activeTilesetPanel:SetStyle({
+                left = tilesetDrag.panelStartX + dx,
+                top = tilesetDrag.panelStartY + dy
+            })
+            return true
+        end
+    end
+    
+    titleBar.onPointerUp = function(self, event)
+        tilesetDrag.isDragging = false
+        return true
+    end
 
-    modal:Open()
+    UI.GetRoot():AddChild(activeTilesetPanel)
 end
 
 --- 重建图片瓦片调色板（扫描后调用）

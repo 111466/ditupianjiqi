@@ -121,7 +121,7 @@ function MapData.RestoreImageRegistry(registry)
                 t.rect = reg.region
             end
             
-            if t.rect then
+            if t.rect and not t.frames then
                 if not tilesetsByPath[t.imagePath] then
                     tilesetsByPath[t.imagePath] = {
                         type = "tileset",
@@ -204,6 +204,7 @@ function MapData.ScanAndLoadImages(folder)
                 name = item.image:gsub("%.[^.]+$", ""),
                 tiles = {}
             }
+            local hasStaticRect = false
             for _, tile in ipairs(item.tiles or {}) do
                 local id = MapData.IMAGE_TILE_BASE + MapData.imageTileCount
                 local tileData = {
@@ -218,6 +219,7 @@ function MapData.ScanAndLoadImages(folder)
                     tileData.fps = tile.fps or 10
                 elseif tile.w and tile.h then
                     tileData.rect = { x = tile.x or 0, y = tile.y or 0, w = tile.w, h = tile.h }
+                    hasStaticRect = true
                 end
                 MapData.TILE_TYPES[id] = tileData
                 MapData.imageTileCount = MapData.imageTileCount + 1
@@ -226,7 +228,14 @@ function MapData.ScanAndLoadImages(folder)
                 table.insert(tileset.tiles, { id = id, rect = tileData.rect, frames = tileData.frames })
                 count = count + 1
             end
-            table.insert(MapData.paletteItems, tileset)
+            
+            if hasStaticRect and #tileset.tiles > 1 then
+                table.insert(MapData.paletteItems, tileset)
+            else
+                for _, tile in ipairs(tileset.tiles) do
+                    table.insert(MapData.paletteItems, { type = "single", id = tile.id })
+                end
+            end
         end
     end
 
