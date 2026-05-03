@@ -24,6 +24,7 @@ local toastTimer = 0           -- toast 消失倒计时
 local imagePaletteGrid = nil   -- 图片瓦片 SimpleGrid 容器
 local imagePaletteSection = nil -- 图片瓦片区域面板
 local imageTileButtonCache = {} -- imagePath → nvgHandle（按钮预览用）
+local imageSizeCache = {}       -- nvgHandle → { w, h }（图片尺寸缓存）
 local rebuildImagePalette      -- 前向声明
 local layerListContainer = nil -- 动态层级列表容器
 local rebuildLayerList         -- 前向声明
