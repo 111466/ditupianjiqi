@@ -190,7 +190,7 @@ local imageSizeCache = {}
 ---@param cx number 菱形中心 X
 ---@param cy number 菱形中心 Y
 ---@param imagePath string 图片资源路径
-local function drawImageTile(nvg, cx, cy, imagePath, flipH)
+local function drawImageTile(nvg, cx, cy, imagePath, flipH, tileType)
     local handle = getOrLoadImage(nvg, imagePath)
     if handle == 0 then
         drawDiamond(nvg, cx, cy, 100, 100, 100, 200)
@@ -204,11 +204,24 @@ local function drawImageTile(nvg, cx, cy, imagePath, flipH)
     end
     local imgInfo = imageSizeCache[handle]
 
+    local sourceRect = nil
+    if tileType then
+        if tileType.frames and #tileType.frames > 0 then
+            local fps = tileType.fps or 10
+            local frameCount = #tileType.frames
+            local t = time and time:GetElapsedTime() or 0
+            local frameIndex = math.floor(t * fps) % frameCount + 1
+            sourceRect = tileType.frames[frameIndex]
+        elseif tileType.rect then
+            sourceRect = tileType.rect
+        end
+    end
+
     -- 像素比缩放：128px = 1格宽(tileWH*2)
     local oneTileW = tileWH * 2
     local pxScale = oneTileW / BASE_PX_PER_TILE
-    local drawW = imgInfo.w * pxScale
-    local drawH = imgInfo.h * pxScale
+    local drawW = (sourceRect and sourceRect.w or imgInfo.w) * pxScale
+    local drawH = (sourceRect and sourceRect.h or imgInfo.h) * pxScale
 
     -- 底部锚定：图片底边对齐菱形底点 (cx, cy + tileHH)
     local drawX = cx - oneTileW / 2
@@ -223,8 +236,13 @@ local function drawImageTile(nvg, cx, cy, imagePath, flipH)
         nvgTranslate(nvg, -imgCenterX, 0)
     end
 
+    local paintW = imgInfo.w * pxScale
+    local paintH = imgInfo.h * pxScale
+    local paintX = sourceRect and (drawX - sourceRect.x * pxScale) or drawX
+    local paintY = sourceRect and (drawY - sourceRect.y * pxScale) or drawY
+
     -- 以矩形绘制图片（不做菱形裁剪，让 PNG 透明度自然生效）
-    local paint = nvgImagePattern(nvg, drawX, drawY, drawW, drawH, 0, handle, 1.0)
+    local paint = nvgImagePattern(nvg, paintX, paintY, paintW, paintH, 0, handle, 1.0)
     nvgBeginPath(nvg)
     nvgRect(nvg, drawX, drawY, drawW, drawH)
     nvgFillPaint(nvg, paint)
@@ -240,7 +258,7 @@ end
 ---@param cx number 格子中心 X
 ---@param cy number 格子中心 Y
 ---@param imagePath string 图片资源路径
-local function drawImageTileTD(nvg, cx, cy, imagePath, flipH)
+local function drawImageTileTD(nvg, cx, cy, imagePath, flipH, tileType)
     local handle = getOrLoadImage(nvg, imagePath)
     if handle == 0 then
         drawTDRect(nvg, cx, cy, 100, 100, 100, 200)
@@ -251,10 +269,24 @@ local function drawImageTileTD(nvg, cx, cy, imagePath, flipH)
         imageSizeCache[handle] = { w = w, h = h }
     end
     local imgInfo = imageSizeCache[handle]
+    
+    local sourceRect = nil
+    if tileType then
+        if tileType.frames and #tileType.frames > 0 then
+            local fps = tileType.fps or 10
+            local frameCount = #tileType.frames
+            local t = time and time:GetElapsedTime() or 0
+            local frameIndex = math.floor(t * fps) % frameCount + 1
+            sourceRect = tileType.frames[frameIndex]
+        elseif tileType.rect then
+            sourceRect = tileType.rect
+        end
+    end
+
     -- 像素比缩放：128px = 1格宽(tdTileW)
     local pxScale = tdTileW / BASE_PX_PER_TILE
-    local drawW = imgInfo.w * pxScale
-    local drawH = imgInfo.h * pxScale
+    local drawW = (sourceRect and sourceRect.w or imgInfo.w) * pxScale
+    local drawH = (sourceRect and sourceRect.h or imgInfo.h) * pxScale
     -- 底部锚定
     local drawX = cx - tdTileW / 2
     local drawY = (cy + tdTileH / 2) - drawH
@@ -268,7 +300,12 @@ local function drawImageTileTD(nvg, cx, cy, imagePath, flipH)
         nvgTranslate(nvg, -imgCenterX, 0)
     end
 
-    local paint = nvgImagePattern(nvg, drawX, drawY, drawW, drawH, 0, handle, 1.0)
+    local paintW = imgInfo.w * pxScale
+    local paintH = imgInfo.h * pxScale
+    local paintX = sourceRect and (drawX - sourceRect.x * pxScale) or drawX
+    local paintY = sourceRect and (drawY - sourceRect.y * pxScale) or drawY
+
+    local paint = nvgImagePattern(nvg, paintX, paintY, paintW, paintH, 0, handle, 1.0)
     nvgBeginPath(nvg)
     nvgRect(nvg, drawX, drawY, drawW, drawH)
     nvgFillPaint(nvg, paint)
@@ -298,11 +335,11 @@ local function strokeTileShape(nvg, cx, cy, r, g, b, a, width)
 end
 
 --- 通用：根据当前视角绘制图片瓦片
-local function drawImageTileAuto(nvg, cx, cy, imagePath, flipH)
+local function drawImageTileAuto(nvg, cx, cy, imagePath, flipH, tileType)
     if viewMode == "topdown" then
-        drawImageTileTD(nvg, cx, cy, imagePath, flipH)
+        drawImageTileTD(nvg, cx, cy, imagePath, flipH, tileType)
     else
-        drawImageTile(nvg, cx, cy, imagePath, flipH)
+        drawImageTile(nvg, cx, cy, imagePath, flipH, tileType)
     end
 end
 
@@ -537,7 +574,7 @@ function IsoCanvas.CreatePanel(UI)
 
                             local tt = MapData.GetTileType(tileID)
                             if tt.imagePath then
-                                drawImageTileAuto(nvg, cx, cy, tt.imagePath, MapData.IsFlippedH(tileID))
+                                drawImageTileAuto(nvg, cx, cy, tt.imagePath, MapData.IsFlippedH(tileID), tt)
                             else
                                 local c = tt.color
                                 drawTileShape(nvg, cx, cy, c[1], c[2], c[3], c[4])
@@ -624,9 +661,9 @@ function IsoCanvas.CreatePanel(UI)
             else
                 nvgGlobalAlpha(nvg, item.alpha)
                 local tt = MapData.GetTileType(item.id)
-                if tt.imagePath then
-                    drawImageTileAuto(nvg, item.cx, item.cy, tt.imagePath, item.flipH)
-                else
+                    if tt.imagePath then
+                        drawImageTileAuto(nvg, item.cx, item.cy, tt.imagePath, item.flipH, tt)
+                    else
                     local c = tt.color
                     drawTileShape(nvg, item.cx, item.cy, c[1], c[2], c[3], c[4])
                 end

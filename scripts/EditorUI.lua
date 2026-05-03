@@ -646,9 +646,51 @@ local function ensureTileButtonWidget()
                 local imgY = l.y + pad
                 local imgW = l.w - pad * 2
                 local imgH = l.h - pad * 2
-                local paint = nvgImagePattern(nvg, imgX, imgY, imgW, imgH, 0, handle, 1.0)
-                nvgBeginPath(nvg)
-                nvgRoundedRect(nvg, imgX, imgY, imgW, imgH, 3)
+                
+                local tileType = self.props._tileType
+                local sourceRect = nil
+                if tileType then
+                    if tileType.frames and #tileType.frames > 0 then
+                        -- UI 上展示第一帧作为预览
+                        sourceRect = tileType.frames[1]
+                    elseif tileType.rect then
+                        sourceRect = tileType.rect
+                    end
+                end
+
+                if not imageSizeCache[handle] then
+                    local w, h = nvgImageSize(nvg, handle)
+                    imageSizeCache[handle] = { w = w, h = h }
+                end
+                local imgInfo = imageSizeCache[handle]
+                
+                local paint
+                if sourceRect then
+                    -- 计算缩放比例，使得切片能适配到按钮中
+                    local scaleX = imgW / sourceRect.w
+                    local scaleY = imgH / sourceRect.h
+                    local scale = math.min(scaleX, scaleY)
+                    
+                    local drawW = sourceRect.w * scale
+                    local drawH = sourceRect.h * scale
+                    local drawX = imgX + (imgW - drawW) / 2
+                    local drawY = imgY + (imgH - drawH) / 2
+                    
+                    local paintW = imgInfo.w * scale
+                    local paintH = imgInfo.h * scale
+                    local paintX = drawX - sourceRect.x * scale
+                    local paintY = drawY - sourceRect.y * scale
+                    
+                    paint = nvgImagePattern(nvg, paintX, paintY, paintW, paintH, 0, handle, 1.0)
+                    
+                    nvgBeginPath(nvg)
+                    nvgRect(nvg, drawX, drawY, drawW, drawH)
+                else
+                    paint = nvgImagePattern(nvg, imgX, imgY, imgW, imgH, 0, handle, 1.0)
+                    nvgBeginPath(nvg)
+                    nvgRoundedRect(nvg, imgX, imgY, imgW, imgH, 3)
+                end
+
                 nvgFillPaint(nvg, paint)
                 nvgFill(nvg)
             else
@@ -693,6 +735,7 @@ local function CreateTileButton(tileID)
         borderColor = { 80, 80, 90, 255 },
         _tileColor = c,
         _imagePath = tileType.imagePath or nil,
+        _tileType = tileType,
 
         onClick = function()
             selectTile(tileID)

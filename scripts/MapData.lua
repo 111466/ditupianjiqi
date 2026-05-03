@@ -128,13 +128,36 @@ function MapData.ScanAndLoadImages(folder)
         return 0
     end
 
-    -- 注册清单中的每个图片文件
-    for _, fname in ipairs(fileList) do
-        local resPath = folder .. "/" .. fname
-        -- 去掉扩展名作为显示名
-        local displayName = fname:gsub("%.[^.]+$", "")
-        MapData.RegisterImageTile(displayName, resPath)
-        count = count + 1
+    -- 注册清单中的每个图片文件或图集
+    for _, item in ipairs(fileList) do
+        if type(item) == "string" then
+            local resPath = folder .. "/" .. item
+            -- 去掉扩展名作为显示名
+            local displayName = item:gsub("%.[^.]+$", "")
+            MapData.RegisterImageTile(displayName, resPath)
+            count = count + 1
+        elseif type(item) == "table" and item.type == "tileset" then
+            local imagePath = folder .. "/" .. item.image
+            for _, tile in ipairs(item.tiles or {}) do
+                local id = MapData.IMAGE_TILE_BASE + MapData.imageTileCount
+                local tileData = {
+                    name = tile.name or "未命名瓦片",
+                    imagePath = imagePath,
+                    color = { 100, 100, 100, 255 },
+                    tag = "",
+                }
+                if tile.frames then
+                    tileData.frames = tile.frames
+                    tileData.fps = tile.fps or 10
+                elseif tile.w and tile.h then
+                    tileData.rect = { x = tile.x or 0, y = tile.y or 0, w = tile.w, h = tile.h }
+                end
+                MapData.TILE_TYPES[id] = tileData
+                MapData.imageTileCount = MapData.imageTileCount + 1
+                MapData.imageTileIDs[#MapData.imageTileIDs + 1] = id
+                count = count + 1
+            end
+        end
     end
 
     print(string.format("[MapData] 已从 '%s' 加载 %d 张图片瓦片", folder, count))
@@ -1086,9 +1109,17 @@ function MapData.Load()
         MapData.imageFolder = saveData.imageFolder or ""
         for _, reg in ipairs(saveData.imageRegistry) do
             local regId = MapData.RegisterImageTile(reg.name, reg.imagePath)
+            local t = MapData.TILE_TYPES[regId]
             -- 恢复 tag
             if reg.tag and reg.tag ~= "" then
-                MapData.TILE_TYPES[regId].tag = reg.tag
+                t.tag = reg.tag
+            end
+            -- 恢复 tileset 片段数据
+            if reg.frames then
+                t.frames = reg.frames
+                t.fps = reg.fps
+            elseif reg.rect then
+                t.rect = reg.rect
             end
         end
     end
@@ -1221,10 +1252,17 @@ function MapData.SaveToNamedFile(filename)
     for _, imgID in ipairs(MapData.imageTileIDs) do
         local t = MapData.TILE_TYPES[imgID]
         if t then
-            imageRegistry[#imageRegistry + 1] = {
+            local entry = {
                 id = imgID, name = t.name, imagePath = t.imagePath,
                 tag = (t.tag and t.tag ~= "") and t.tag or nil,
             }
+            if t.frames then
+                entry.frames = t.frames
+                entry.fps = t.fps
+            elseif t.rect then
+                entry.rect = t.rect
+            end
+            imageRegistry[#imageRegistry + 1] = entry
         end
     end
 
@@ -1361,8 +1399,18 @@ function MapData.LoadFromNamedFile(filename)
         MapData.imageFolder = saveData.imageFolder or ""
         for _, reg in ipairs(saveData.imageRegistry) do
             local regId = MapData.RegisterImageTile(reg.name, reg.imagePath)
-            if regId and reg.tag and reg.tag ~= "" then
-                MapData.TILE_TYPES[regId].tag = reg.tag
+            if regId then
+                local t = MapData.TILE_TYPES[regId]
+                if reg.tag and reg.tag ~= "" then
+                    t.tag = reg.tag
+                end
+                -- 恢复 tileset 片段数据
+                if reg.frames then
+                    t.frames = reg.frames
+                    t.fps = reg.fps
+                elseif reg.rect then
+                    t.rect = reg.rect
+                end
             end
         end
     end
@@ -1473,9 +1521,19 @@ function MapData.ExportToLua()
             local t = MapData.TILE_TYPES[imgID]
             if t then
                 local tagStr = (t.tag and t.tag ~= "") and string.format(', tag = %q', t.tag) or ""
+                local extraStr = ""
+                if t.frames then
+                    local framesStr = {}
+                    for _, f in ipairs(t.frames) do
+                        framesStr[#framesStr+1] = string.format("{x=%d,y=%d,w=%d,h=%d}", f.x, f.y, f.w, f.h)
+                    end
+                    extraStr = string.format(", frames = {%s}, fps = %d", table.concat(framesStr, ","), t.fps or 10)
+                elseif t.rect then
+                    extraStr = string.format(", rect = {x=%d,y=%d,w=%d,h=%d}", t.rect.x, t.rect.y, t.rect.w, t.rect.h)
+                end
                 lines[#lines + 1] = string.format(
-                    '        { id = %d, name = %q, imagePath = %q%s },',
-                    imgID, t.name, t.imagePath, tagStr)
+                    '        { id = %d, name = %q, imagePath = %q%s%s },',
+                    imgID, t.name, t.imagePath, tagStr, extraStr)
             end
         end
         lines[#lines + 1] = "    },"
