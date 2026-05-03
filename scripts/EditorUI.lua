@@ -373,12 +373,6 @@ local function CreateToolbar()
                                                 local entry = { x = x, y = y, id = baseID }
                                                 if flipH then entry.flipH = true end
                                                 if t and t.imagePath then entry.path = t.imagePath end
-                                                if t and t.region then entry.region = t.region end
-                                                if t and t.isAnimated then 
-                                                    entry.isAnimated = true
-                                                    entry.frames = t.frames
-                                                    entry.fps = t.fps
-                                                end
                                                 if t and t.tag and t.tag ~= "" then entry.tag = t.tag end
                                                 tiles[#tiles + 1] = entry
                                             end
@@ -532,13 +526,8 @@ local function CreateToolbar()
                         MapData.imageFolder = saveData.imageFolder or ""
                         for _, reg in ipairs(saveData.imageRegistry) do
                             local regId = MapData.RegisterImageTile(reg.name, reg.imagePath)
-                            local t = MapData.TILE_TYPES[regId]
-                            if reg.region then t.region = reg.region end
-                            if reg.isAnimated ~= nil then t.isAnimated = reg.isAnimated end
-                            if reg.frames then t.frames = reg.frames end
-                            if reg.fps then t.fps = reg.fps end
-                            if reg.tag and reg.tag ~= "" then
-                                t.tag = reg.tag
+                            if regId and reg.tag and reg.tag ~= "" then
+                                MapData.TILE_TYPES[regId].tag = reg.tag
                             end
                         end
                     end
@@ -645,7 +634,6 @@ local function ensureTileButtonWidget()
         local cy = l.y + l.h / 2
 
         local imagePath = self.props._imagePath
-        local region = self.props._region
         if imagePath then
             -- 图片瓦片预览
             if not imageTileButtonCache[imagePath] then
@@ -653,34 +641,14 @@ local function ensureTileButtonWidget()
             end
             local handle = imageTileButtonCache[imagePath]
             if handle and handle ~= 0 then
-                local imgW_orig, imgH_orig = nvgImageSize(nvg, handle)
-                
-                local srcX, srcY, srcW, srcH
-                if region then
-                    srcX, srcY, srcW, srcH = region.x, region.y, region.w, region.h
-                else
-                    srcX, srcY, srcW, srcH = 0, 0, imgW_orig, imgH_orig
-                end
-                
                 local pad = 4
-                local btnImgW = l.w - pad * 2
-                local btnImgH = l.h - pad * 2
-                
-                -- 按比例缩放到按钮内
-                local scale = math.min(btnImgW / srcW, btnImgH / srcH)
-                local drawW = srcW * scale
-                local drawH = srcH * scale
-                local drawX = l.x + pad + (btnImgW - drawW) / 2
-                local drawY = l.y + pad + (btnImgH - drawH) / 2
-                
-                local patW = imgW_orig * scale
-                local patH = imgH_orig * scale
-                local patX = drawX - srcX * scale
-                local patY = drawY - srcY * scale
-                
-                local paint = nvgImagePattern(nvg, patX, patY, patW, patH, 0, handle, 1.0)
+                local imgX = l.x + pad
+                local imgY = l.y + pad
+                local imgW = l.w - pad * 2
+                local imgH = l.h - pad * 2
+                local paint = nvgImagePattern(nvg, imgX, imgY, imgW, imgH, 0, handle, 1.0)
                 nvgBeginPath(nvg)
-                nvgRoundedRect(nvg, drawX, drawY, drawW, drawH, 3)
+                nvgRoundedRect(nvg, imgX, imgY, imgW, imgH, 3)
                 nvgFillPaint(nvg, paint)
                 nvgFill(nvg)
             else
@@ -725,7 +693,6 @@ local function CreateTileButton(tileID)
         borderColor = { 80, 80, 90, 255 },
         _tileColor = c,
         _imagePath = tileType.imagePath or nil,
-        _region = tileType.region or nil,
 
         onClick = function()
             selectTile(tileID)

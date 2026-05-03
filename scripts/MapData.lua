@@ -97,7 +97,6 @@ function MapData.ClearImageTiles()
 end
 
 --- 扫描文件夹并批量注册图片瓦片（通过读取 manifest.json 清单）
---- 支持静态图片 (字符串) 和序列帧动图 (对象: {name="water", frames=["w1.png","w2.png"], fps=5})
 ---@param folder string 文件夹路径（资源相对路径，如 "Tiles"）
 ---@return number count 注册的图片数量
 function MapData.ScanAndLoadImages(folder)
@@ -129,75 +128,13 @@ function MapData.ScanAndLoadImages(folder)
         return 0
     end
 
-    -- 注册清单中的每个文件（支持普通字符串、序列帧对象、以及图集）
-    for _, item in ipairs(fileList) do
-        if type(item) == "string" then
-            local resPath = folder .. "/" .. item
-            local displayName = item:gsub("%.[^.]+$", "")
-            MapData.RegisterImageTile(displayName, resPath)
-            count = count + 1
-        elseif type(item) == "table" then
-            if item.type == "tileset" and item.image and item.tiles then
-                -- 图集解析
-                local imagePath = folder .. "/" .. item.image
-                for _, tileDef in ipairs(item.tiles) do
-                    local id = MapData.IMAGE_TILE_BASE + MapData.imageTileCount
-                    if tileDef.frames and #tileDef.frames > 0 then
-                        -- 图集内的序列帧动画
-                        local fullFrames = {}
-                        for _, f in ipairs(tileDef.frames) do
-                            table.insert(fullFrames, {
-                                imagePath = imagePath,
-                                region = { x = f.x, y = f.y, w = f.w, h = f.h }
-                            })
-                        end
-                        MapData.TILE_TYPES[id] = {
-                            name = tileDef.name,
-                            imagePath = fullFrames[1].imagePath,
-                            region = fullFrames[1].region,
-                            color = { 100, 100, 100, 255 },
-                            tag = "",
-                            isAnimated = true,
-                            frames = fullFrames,
-                            fps = tileDef.fps or 5
-                        }
-                    else
-                        -- 图集内的静态切片
-                        MapData.TILE_TYPES[id] = {
-                            name = tileDef.name,
-                            imagePath = imagePath,
-                            region = { x = tileDef.x, y = tileDef.y, w = tileDef.w, h = tileDef.h },
-                            color = { 100, 100, 100, 255 },
-                            tag = "",
-                        }
-                    end
-                    MapData.imageTileCount = MapData.imageTileCount + 1
-                    MapData.imageTileIDs[#MapData.imageTileIDs + 1] = id
-                    count = count + 1
-                end
-            elseif item.name and item.frames and #item.frames > 0 then
-                -- 独立文件的序列帧对象 (旧逻辑兼容)
-                local id = MapData.IMAGE_TILE_BASE + MapData.imageTileCount
-                local fullFrames = {}
-                for _, f in ipairs(item.frames) do
-                    table.insert(fullFrames, {
-                        imagePath = folder .. "/" .. f
-                    })
-                end
-                MapData.TILE_TYPES[id] = {
-                    name = item.name,
-                    imagePath = fullFrames[1].imagePath,
-                    color = { 100, 100, 100, 255 },
-                    tag = "",
-                    isAnimated = true,
-                    frames = fullFrames,
-                    fps = item.fps or 5
-                }
-                MapData.imageTileCount = MapData.imageTileCount + 1
-                MapData.imageTileIDs[#MapData.imageTileIDs + 1] = id
-                count = count + 1
-            end
-        end
+    -- 注册清单中的每个图片文件
+    for _, fname in ipairs(fileList) do
+        local resPath = folder .. "/" .. fname
+        -- 去掉扩展名作为显示名
+        local displayName = fname:gsub("%.[^.]+$", "")
+        MapData.RegisterImageTile(displayName, resPath)
+        count = count + 1
     end
 
     print(string.format("[MapData] 已从 '%s' 加载 %d 张图片瓦片", folder, count))
@@ -221,13 +158,6 @@ end
 -- 撤销/重做系统 (Undo/Redo)
 -- 每个操作 = { changes = { {layerIndex, x, y, oldID, newID}, ... } }
 -- ============================================================================
-
-MapData.globalAnimTime = 0.0 -- 全局动画时间累加器
-
---- 更新全局动画时间
-function MapData.UpdateAnimTime(dt)
-    MapData.globalAnimTime = MapData.globalAnimTime + dt
-end
 
 local undoStack = {}     -- 撤销栈
 local redoStack = {}     -- 重做栈
@@ -1058,7 +988,7 @@ function MapData.Save()
         }
     end
 
-    -- 收集图片瓦片注册表（含 tag、图集、动画等数据）
+    -- 收集图片瓦片注册表（含 tag）
     local imageRegistry = {}
     for _, imgID in ipairs(MapData.imageTileIDs) do
         local t = MapData.TILE_TYPES[imgID]
@@ -1067,10 +997,6 @@ function MapData.Save()
                 id = imgID,
                 name = t.name,
                 imagePath = t.imagePath,
-                region = t.region,
-                isAnimated = t.isAnimated,
-                frames = t.frames,
-                fps = t.fps,
                 tag = (t.tag and t.tag ~= "") and t.tag or nil,
             }
         end
@@ -1160,14 +1086,9 @@ function MapData.Load()
         MapData.imageFolder = saveData.imageFolder or ""
         for _, reg in ipairs(saveData.imageRegistry) do
             local regId = MapData.RegisterImageTile(reg.name, reg.imagePath)
-            local t = MapData.TILE_TYPES[regId]
-            if reg.region then t.region = reg.region end
-            if reg.isAnimated ~= nil then t.isAnimated = reg.isAnimated end
-            if reg.frames then t.frames = reg.frames end
-            if reg.fps then t.fps = reg.fps end
             -- 恢复 tag
             if reg.tag and reg.tag ~= "" then
-                t.tag = reg.tag
+                MapData.TILE_TYPES[regId].tag = reg.tag
             end
         end
     end
