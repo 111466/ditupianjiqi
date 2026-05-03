@@ -347,6 +347,9 @@ function IsoMapEditor.Update(dt)
 
     -- ---- 编辑器逻辑 ----
     if not isActive then return end
+
+    -- 更新全局动画时间
+    MapData.UpdateAnimTime(dt)
     EditorUI.Update(dt)
     EditorUI.HandleWASDPan(dt)
 end
