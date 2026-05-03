@@ -978,16 +978,15 @@ showTilesetModal = function(tileset)
     -- 手动绑定拖拽事件到标题栏
     local titleBar = activeTilesetPanel.children[1]
     
-    titleBar.onPointerDown = function(self, event)
+    titleBar.props.onPointerDown = function(event, widget)
         tilesetDrag.isDragging = true
         tilesetDrag.startX = event.x
         tilesetDrag.startY = event.y
         tilesetDrag.panelStartX = activeTilesetPanel.props.left
         tilesetDrag.panelStartY = activeTilesetPanel.props.top
-        return true
     end
     
-    titleBar.onPointerMove = function(self, event)
+    titleBar.props.onPointerMove = function(event, widget)
         if tilesetDrag.isDragging then
             local dx = event.x - tilesetDrag.startX
             local dy = event.y - tilesetDrag.startY
@@ -995,13 +994,11 @@ showTilesetModal = function(tileset)
                 left = tilesetDrag.panelStartX + dx,
                 top = tilesetDrag.panelStartY + dy
             })
-            return true
         end
     end
     
-    titleBar.onPointerUp = function(self, event)
+    titleBar.props.onPointerUp = function(event, widget)
         tilesetDrag.isDragging = false
-        return true
     end
 
     UI.GetRoot():AddChild(activeTilesetPanel)
