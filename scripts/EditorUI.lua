@@ -889,7 +889,8 @@ showTilesetModal = function(tileset)
         end
     end
 
-    local TilesetBackgroundWidget = UI.Core.Widget:Extend("TilesetBackgroundWidget")
+    local Widget = require("urhox-libs/UI/Core/Widget")
+    local TilesetBackgroundWidget = Widget:Extend("TilesetBackgroundWidget")
     function TilesetBackgroundWidget:Render(nvg)
         self:RenderFullBackground(nvg)
         local l = self:GetAbsoluteLayout()
