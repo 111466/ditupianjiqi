@@ -18,8 +18,8 @@ local BASE_TILE_H_HALF = 16   -- 基础半高
 local BASE_TD_TILE_W = 40     -- 正视瓦片宽度
 local BASE_TD_TILE_H = 40     -- 正视瓦片高度（正方形）
 
--- 像素比基准：128px = 1个网格
-local BASE_PX_PER_TILE = 128
+-- 像素比基准：64px = 1个网格
+local BASE_PX_PER_TILE = 64
 
 -- 相机状态
 local camX = 0

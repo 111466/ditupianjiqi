@@ -112,7 +112,10 @@ function MapData.ScanAndLoadImages(folder)
     local jsonStr = ""
 
     -- 优先从文件系统直接读取，避免缓存导致无法读取最新修改
-    local file = File(fsPath, FILE_READ)
+    local file
+    if fileSystem:FileExists(fsPath) then
+        file = File(fsPath, FILE_READ)
+    end
     if file and file:IsOpen() then
         jsonStr = file:ReadString()
         file:Close()
@@ -1384,7 +1387,9 @@ function MapData.LoadFromNamedFile(filename)
         source = "resource"
     else
         -- 回退到存档目录（用户通过引擎 File API 保存的地图）
-        file = File(relPath, FILE_READ)
+        if fileSystem:FileExists(relPath) then
+            file = File(relPath, FILE_READ)
+        end
         if file and file:IsOpen() then
             source = "savedata"
         else
