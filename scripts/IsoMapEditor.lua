@@ -253,21 +253,30 @@ function IsoMapEditor.Enter()
     if MapData.HasSave() then
         MapData.Load()
         print("[IsoMapEditor] 已加载临时存档")
-    elseif MapData.LoadFromProject() then
-        print("[IsoMapEditor] 已加载项目地图")
+        print("[IsoMapEditor] 进入编辑器")
+    else
+        -- 本地无存档（可能是刷新页面后丢失），尝试从云端恢复
+        MapData.LoadFromCloud(function(success)
+            if success then
+                print("[IsoMapEditor] 已从云端恢复存档")
+            elseif MapData.LoadFromProject() then
+                print("[IsoMapEditor] 已加载项目地图")
+            else
+                print("[IsoMapEditor] 无存档，使用默认空地图")
+            end
+        end)
+        print("[IsoMapEditor] 进入编辑器（等待云端加载...）")
     end
-
-    print("[IsoMapEditor] 进入编辑器")
 end
 
 --- 退出编辑器，返回宿主项目界面
 function IsoMapEditor.Exit()
     if not isActive then return end
 
-    -- 自动保存
-    if config.autoSave then
+    -- 退出时保存（无论是否开启 autoSave，有未保存修改都立即存盘）
+    if config.autoSave or MapData.IsDirty() then
         MapData.Save()
-        print("[IsoMapEditor] 自动保存完成")
+        print("[IsoMapEditor] 退出保存完成")
     end
 
     -- 恢复宿主项目 UI
@@ -347,6 +356,7 @@ function IsoMapEditor.Update(dt)
 
     -- ---- 编辑器逻辑 ----
     if not isActive then return end
+    MapData.UpdateAutoSave(dt)
     EditorUI.Update(dt)
     EditorUI.HandleWASDPan(dt)
 end

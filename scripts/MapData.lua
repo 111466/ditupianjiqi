@@ -4,6 +4,44 @@
 
 local MapData = {}
 
+-- ============================================================================
+-- 防抖自动保存（编辑操作后延迟自动保存）
+-- ============================================================================
+local AUTO_SAVE_DELAY = 2.0     -- 防抖延迟（秒）
+local dirty = false             -- 是否有未保存的修改
+local dirtyTimer = 0            -- 防抖倒计时
+
+--- 标记数据已修改（内部调用）
+local function markDirty()
+    dirty = true
+    dirtyTimer = AUTO_SAVE_DELAY
+end
+
+--- 每帧驱动防抖保存（由 IsoMapEditor.Update 调用）
+---@param dt number 帧间隔
+function MapData.UpdateAutoSave(dt)
+    if not dirty then return end
+    dirtyTimer = dirtyTimer - dt
+    if dirtyTimer <= 0 then
+        dirty = false
+        dirtyTimer = 0
+        MapData.Save()
+        print("[MapData] 自动保存完成")
+    end
+end
+
+--- 检查是否有未保存的修改
+---@return boolean
+function MapData.IsDirty()
+    return dirty
+end
+
+--- 清除 dirty 标记（手动保存后调用）
+function MapData.ClearDirty()
+    dirty = false
+    dirtyTimer = 0
+end
+
 -- 地图尺寸
 MapData.MAP_W = 8
 MapData.MAP_H = 8
@@ -294,6 +332,7 @@ function MapData.CommitBatch()
         end
         -- 新操作清空重做栈
         redoStack = {}
+        markDirty()
     end
     batchChanges = nil
 end
@@ -325,6 +364,7 @@ local function recordChange(layerIndex, x, y, oldID, newID)
         end
         redoStack = {}
     end
+    markDirty()
 end
 
 --- 翻转指定位置的瓦片（带撤销支持）
@@ -366,6 +406,7 @@ function MapData.Undo()
 
     -- 压入重做栈
     redoStack[#redoStack + 1] = op
+    markDirty()
     return true
 end
 
@@ -388,6 +429,7 @@ function MapData.Redo()
 
     -- 压入撤销栈
     undoStack[#undoStack + 1] = op
+    markDirty()
     return true
 end
 
@@ -475,6 +517,7 @@ function MapData.AddLayer(name, groupId)
     name = name or ("层 " .. idx)
     MapData.layers[idx] = { name = name, data = createEmptyGrid(), visible = true, locked = false, opacity = 1.0, groupId = groupId or nil, tag = "" }
     print(string.format("[MapData] 添加层 %d: %s", idx, name))
+    markDirty()
     return idx
 end
 
@@ -495,6 +538,7 @@ function MapData.RemoveLayer(index)
         MapData.currentLayerIndex = #MapData.layers
     end
     print(string.format("[MapData] 删除层 %d，剩余 %d 层", index, #MapData.layers))
+    markDirty()
     return true
 end
 
@@ -505,6 +549,7 @@ function MapData.RenameLayer(index, name)
     local layer = MapData.layers[index]
     if layer then
         layer.name = name
+        markDirty()
     end
 end
 
@@ -515,6 +560,7 @@ function MapData.SetLayerTag(index, tag)
     local layer = MapData.layers[index]
     if layer then
         layer.tag = tag or ""
+        markDirty()
     end
 end
 
@@ -533,6 +579,7 @@ function MapData.ToggleLayerVisible(index)
     local layer = MapData.layers[index]
     if not layer then return true end
     layer.visible = not layer.visible
+    markDirty()
     return layer.visible
 end
 
@@ -551,6 +598,7 @@ function MapData.ToggleLayerLocked(index)
     local layer = MapData.layers[index]
     if not layer then return false end
     layer.locked = not layer.locked
+    markDirty()
     return layer.locked
 end
 
@@ -574,6 +622,7 @@ function MapData.MoveLayerUp(index)
     elseif MapData.currentLayerIndex == index - 1 then
         MapData.currentLayerIndex = index
     end
+    markDirty()
     return true
 end
 
@@ -589,6 +638,7 @@ function MapData.MoveLayerDown(index)
     elseif MapData.currentLayerIndex == index + 1 then
         MapData.currentLayerIndex = index
     end
+    markDirty()
     return true
 end
 
@@ -608,6 +658,7 @@ function MapData.SetLayerOpacity(index, opacity)
     local layer = MapData.layers[index]
     if not layer then return end
     layer.opacity = math.max(0.0, math.min(1.0, opacity))
+    markDirty()
 end
 
 -- ============================================================================
@@ -831,6 +882,7 @@ function MapData.ResizeMap(newW, newH)
 
     -- 清空撤销历史（尺寸变了，旧操作坐标可能越界）
     MapData.ClearHistory()
+    markDirty()
 
     print(string.format("[MapData] 地图尺寸: %dx%d → %dx%d", oldW, oldH, newW, newH))
     return true
@@ -905,6 +957,7 @@ function MapData.Clear()
             end
         end
     end
+    markDirty()
 end
 
 --- 获取瓦片类型信息（自动剥离翻转标志）
@@ -1183,9 +1236,24 @@ function MapData.Save()
         print("[MapData] 保存失败: 无法打开文件")
         return false
     end
-    file:WriteString(cjson.encode(saveData))
+    local jsonStr = cjson.encode(saveData)
+    file:WriteString(jsonStr)
     file:Close()
+    MapData.ClearDirty()
     print(string.format("[MapData] 已保存 %d 层 共 %d 个瓦片", #MapData.layers, totalCount))
+
+    -- 同步到云端（持久化，刷新页面不丢失）
+    if clientCloud then
+        clientCloud:Set("map_save", jsonStr, {
+            ok = function()
+                print("[MapData] 云端同步完成")
+            end,
+            error = function(code, reason)
+                print(string.format("[MapData] 云端同步失败: %s (code=%s)", tostring(reason), tostring(code)))
+            end
+        })
+    end
+
     return true
 end
 
@@ -1309,6 +1377,117 @@ end
 ---@return boolean
 function MapData.HasSave()
     return fileSystem:FileExists(SAVE_FILE)
+end
+
+--- 从云端加载地图（异步）
+--- 刷新页面后本地存档丢失，通过 clientCloud 恢复
+---@param callback function(success: boolean) 加载完成回调
+function MapData.LoadFromCloud(callback)
+    if not clientCloud then
+        print("[MapData] clientCloud 不可用，跳过云端加载")
+        if callback then callback(false) end
+        return
+    end
+
+    print("[MapData] 尝试从云端加载存档...")
+    clientCloud:Get("map_save", {
+        ok = function(values, iscores)
+            local jsonStr = values.map_save
+            if not jsonStr or jsonStr == "" then
+                print("[MapData] 云端无存档数据")
+                if callback then callback(false) end
+                return
+            end
+
+            local ok, saveData = pcall(cjson.decode, jsonStr)
+            if not ok or not saveData then
+                print("[MapData] 云端数据 JSON 解析失败")
+                if callback then callback(false) end
+                return
+            end
+
+            -- 先写入本地文件（后续可直接从本地读取）
+            local file = File(SAVE_FILE, FILE_WRITE)
+            if file:IsOpen() then
+                file:WriteString(jsonStr)
+                file:Close()
+                print("[MapData] 云端数据已写入本地缓存")
+            end
+
+            -- 复用 Load 的反序列化逻辑
+            -- 重建图片瓦片注册表
+            if saveData.imageRegistry then
+                MapData.imageFolder = saveData.imageFolder or ""
+                MapData.RestoreImageRegistry(saveData.imageRegistry)
+            end
+
+            -- 恢复颜色瓦片自定义属性
+            if saveData.tileCustomizations then
+                for _, c in ipairs(saveData.tileCustomizations) do
+                    local t = MapData.TILE_TYPES[c.id]
+                    if t then
+                        if c.name then t.name = c.name end
+                        if c.tag then t.tag = c.tag end
+                    end
+                end
+            end
+
+            if saveData.version == 4 and saveData.layers then
+                if saveData.width and saveData.height then
+                    MapData.MAP_W = math.max(2, math.min(100, saveData.width))
+                    MapData.MAP_H = math.max(2, math.min(100, saveData.height))
+                end
+                if saveData.showGrid ~= nil then
+                    MapData.showGrid = saveData.showGrid
+                end
+                MapData.layers = {}
+                local totalCount = 0
+                for i, layerInfo in ipairs(saveData.layers) do
+                    local grid = createEmptyGrid()
+                    local count = restoreLayerTiles(grid, layerInfo.tiles)
+                    totalCount = totalCount + count
+                    MapData.layers[i] = {
+                        name = layerInfo.name, data = grid,
+                        visible = layerInfo.visible ~= false,
+                        locked = layerInfo.locked == true,
+                        opacity = layerInfo.opacity or 1.0,
+                        groupId = layerInfo.groupId,
+                        tag = layerInfo.tag or "",
+                    }
+                end
+                if #MapData.layers == 0 then
+                    MapData.layers[1] = { name = "地面", data = createEmptyGrid(), visible = true, locked = false, opacity = 1.0 }
+                end
+                MapData.currentLayerIndex = math.min(MapData.currentLayerIndex, #MapData.layers)
+
+                if saveData.groups then
+                    MapData.groups = saveData.groups
+                    MapData.nextGroupId = saveData.nextGroupId or 1
+                else
+                    MapData.groups = {}
+                    MapData.nextGroupId = 1
+                end
+
+                if saveData.walkRules then
+                    MapData.walkRules = {}
+                    for tag, walkable in pairs(saveData.walkRules) do
+                        MapData.walkRules[tag] = walkable
+                    end
+                end
+                if saveData.defaultWalkable ~= nil then
+                    MapData.defaultWalkable = saveData.defaultWalkable
+                end
+
+                print(string.format("[MapData] 已从云端加载 %d 层 共 %d 个瓦片 (地图 %dx%d)", #MapData.layers, totalCount, MapData.MAP_W, MapData.MAP_H))
+            end
+
+            if callback then callback(true) end
+        end,
+        error = function(code, reason)
+            print(string.format("[MapData] 云端加载失败: %s (code=%s)", tostring(reason), tostring(code)))
+            if callback then callback(false) end
+        end
+    })
 end
 
 -- ============================================================================
@@ -1734,6 +1913,7 @@ function MapData.CreateGroup(name)
     name = name or ("组 " .. id)
     MapData.groups[id] = { name = name, collapsed = false }
     print(string.format("[MapData] 创建图层组 %d: %s", id, name))
+    markDirty()
     return id
 end
 
@@ -1749,6 +1929,7 @@ function MapData.DeleteGroup(groupId)
     end
     MapData.groups[groupId] = nil
     print(string.format("[MapData] 删除图层组 %d", groupId))
+    markDirty()
     return true
 end
 
@@ -1757,7 +1938,10 @@ end
 ---@param name string
 function MapData.RenameGroup(groupId, name)
     local g = MapData.groups[groupId]
-    if g then g.name = name end
+    if g then
+        g.name = name
+        markDirty()
+    end
 end
 
 --- 获取图层组信息
@@ -1792,6 +1976,7 @@ function MapData.SetLayerGroup(layerIndex, groupId)
     local layer = MapData.layers[layerIndex]
     if not layer then return end
     layer.groupId = groupId
+    markDirty()
 end
 
 --- 获取层的所属组 ID
@@ -1847,6 +2032,7 @@ function MapData.SetGroupVisible(groupId, visible)
             layer.visible = visible
         end
     end
+    markDirty()
 end
 
 --- 切换整组锁定（组内所有层统一设置）
@@ -1858,6 +2044,7 @@ function MapData.SetGroupLocked(groupId, locked)
             layer.locked = locked
         end
     end
+    markDirty()
 end
 
 return MapData

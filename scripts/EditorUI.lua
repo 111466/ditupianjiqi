@@ -671,6 +671,8 @@ local function CreateToolbar()
                     if updateMapSizeLabel then updateMapSizeLabel() end
                     -- 导入成功后自动保存为命名存档，使"加载"按钮能扫描到
                     MapData.SaveToNamedFile("_import")
+                    -- 同步到云端（持久化，刷新页面不丢失）
+                    MapData.Save()
                     EditorUI.ShowToast("从 _import.json 导入成功")
                 end,
             },
@@ -1203,6 +1205,9 @@ showTilesetModal = function(tileset)
     local horizontalScrollSlider = nil
     local verticalScrollSlider = nil
 
+    ---@type fun()
+    local syncTilesetViewport
+
     local bgPanel = TilesetViewWidget {
         width = viewportW,
         minWidth = viewportW,
@@ -1258,7 +1263,7 @@ showTilesetModal = function(tileset)
     bgPanel._scrollX = scrollX
     bgPanel._scrollY = scrollY
 
-    local function syncTilesetViewport()
+    function syncTilesetViewport()
         bgPanel._scrollX = scrollX
         bgPanel._scrollY = scrollY
         if horizontalScrollLabel then
@@ -1290,6 +1295,9 @@ showTilesetModal = function(tileset)
         minHeight = viewportH,
         overflow = "hidden",
         backgroundColor = { 24, 26, 30, 255 },
+        OnWheel = function(self, dx, dy)
+            bgPanel:OnWheel(dx, dy)
+        end,
         children = { bgPanel }
     }
 
@@ -2161,6 +2169,8 @@ showLoadModal = function()
                 modal:Close()
                 if MapData.LoadFromNamedFile(name) then
                     refreshAfterLoad()
+                    -- 同步到云端（持久化，刷新页面不丢失）
+                    MapData.Save()
                     EditorUI.ShowToast("已加载: " .. name .. ".json")
                 else
                     EditorUI.ShowToast("加载失败: " .. name)
