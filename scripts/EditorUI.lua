@@ -1085,6 +1085,35 @@ local function drawTilesetSelectionEffect(nvg, layout, rect)
     nvgFill(nvg)
 end
 
+local function ensureCachedImageHandle(nvg, imagePath)
+    local handle = imageTileButtonCache[imagePath]
+    if not handle or handle == 0 then
+        handle = nvgCreateImage(nvg, imagePath, 0)
+        imageTileButtonCache[imagePath] = handle
+    end
+    return handle
+end
+
+local function getCachedImageInfo(nvg, handle)
+    if not handle or handle == 0 then
+        return nil
+    end
+
+    local info = imageSizeCache[handle]
+    if info and info.w and info.w > 0 and info.h and info.h > 0 then
+        return info
+    end
+
+    local w, h = nvgImageSize(nvg, handle)
+    if w and h and w > 0 and h > 0 then
+        info = { w = w, h = h }
+        imageSizeCache[handle] = info
+        return info
+    end
+
+    return nil
+end
+
 local function ensureTilesetViewWidget()
     if TilesetViewWidget then return end
     local Widget = require("urhox-libs/UI/Core/Widget")
@@ -1098,20 +1127,20 @@ local function ensureTilesetViewWidget()
         if not tileset or not meta then return end
 
         local l = self:GetAbsoluteLayout()
-        if not imageTileButtonCache[tileset.imagePath] then
-            imageTileButtonCache[tileset.imagePath] = nvgCreateImage(nvg, tileset.imagePath, 0)
-        end
-        local handle = imageTileButtonCache[tileset.imagePath]
+        local handle = ensureCachedImageHandle(nvg, tileset.imagePath)
         if handle and handle ~= 0 then
-            if not imageSizeCache[handle] then
-                local iw, ih = nvgImageSize(nvg, handle)
-                imageSizeCache[handle] = { w = iw, h = ih }
-            end
-            local imgInfo = imageSizeCache[handle]
-            local paint = nvgImagePattern(nvg, l.x, l.y, imgInfo.w, imgInfo.h, 0, handle, 1.0)
+            local imgInfo = getCachedImageInfo(nvg, handle)
+            local paintW = (imgInfo and imgInfo.w) or l.w
+            local paintH = (imgInfo and imgInfo.h) or l.h
+            local paint = nvgImagePattern(nvg, l.x, l.y, paintW, paintH, 0, handle, 1.0)
             nvgBeginPath(nvg)
             nvgRect(nvg, l.x, l.y, l.w, l.h)
             nvgFillPaint(nvg, paint)
+            nvgFill(nvg)
+        else
+            nvgBeginPath(nvg)
+            nvgRect(nvg, l.x, l.y, l.w, l.h)
+            nvgFillColor(nvg, nvgRGBA(45, 45, 50, 255))
             nvgFill(nvg)
         end
 
