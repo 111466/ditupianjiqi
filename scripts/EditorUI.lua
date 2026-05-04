@@ -1129,10 +1129,8 @@ local function ensureTilesetViewWidget()
         local l = self:GetAbsoluteLayout()
         local handle = ensureCachedImageHandle(nvg, tileset.imagePath)
         if handle and handle ~= 0 then
-            local imgInfo = getCachedImageInfo(nvg, handle)
-            local paintW = (imgInfo and imgInfo.w) or l.w
-            local paintH = (imgInfo and imgInfo.h) or l.h
-            local paint = nvgImagePattern(nvg, l.x, l.y, paintW, paintH, 0, handle, 1.0)
+            -- 图集视图按控件实际尺寸铺开，避免尺寸缓存异常时整张图被压进左上角小块。
+            local paint = nvgImagePattern(nvg, l.x, l.y, l.w, l.h, 0, handle, 1.0)
             nvgBeginPath(nvg)
             nvgRect(nvg, l.x, l.y, l.w, l.h)
             nvgFillPaint(nvg, paint)
