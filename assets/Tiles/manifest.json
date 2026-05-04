@@ -329,7 +329,7 @@
     "type": "tileset",
     "image": "Water Background color.png",
     "tiles": [
-      { "name": "水背景", "renderMode": "flat", "x": 0, "y": 0, "w": 64, "h": 64 }
+      { "name": "水背景", "scale": 1.1, "renderMode": "flat", "x": 0, "y": 0, "w": 64, "h": 64 }
     ]
   }
 ]
