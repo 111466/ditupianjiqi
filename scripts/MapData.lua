@@ -257,8 +257,10 @@ function MapData.ScanAndLoadImages(folder)
                     color = { 100, 100, 100, 255 },
                     tag = "",
                     renderMode = tile.renderMode or "vertical",
-                    scale = tile.scale or 1.0,
                 }
+                if tile.scale ~= nil then
+                    tileData.scale = tile.scale
+                end
                 if tile.frames then
                     tileData.frames = tile.frames
                     tileData.fps = tile.fps or 10
@@ -744,42 +746,30 @@ function MapData.GetClipboardSize()
     return clipboard.width, clipboard.height
 end
 
---- 洪水填充（BFS，从指定起点替换同色连通区域）
----@param startX number 起点 X (1-based)
----@param startY number 起点 Y (1-based)
----@param newTileID number 填入的新瓦片 ID
----@param layerIndex number|nil 层索引（nil = 当前层）
----@return number count 填充的格数
-function MapData.FloodFill(startX, startY, newTileID, layerIndex)
-    layerIndex = layerIndex or MapData.currentLayerIndex
-    if not MapData.InBounds(startX, startY) then return 0 end
-    local layer = MapData.layers[layerIndex]
-    if not layer then return 0 end
+local function collectFloodFillCells(layer, startX, startY)
+    if not layer or not MapData.InBounds(startX, startY) then
+        return nil, 0
+    end
 
     local targetID = layer.data[startY][startX]
-    if targetID == newTileID then return 0 end -- 同色不需要填充
-
-    -- BFS
     local queue = { { startX, startY } }
+    local queueHead = 1
     local visited = {}
-    local count = 0
+    local cells = {}
     local W, H = MapData.MAP_W, MapData.MAP_H
 
     local function key(x, y) return y * 10000 + x end
 
     visited[key(startX, startY)] = true
 
-    MapData.BeginBatch()
-
-    while #queue > 0 do
-        local cell = table.remove(queue, 1)
+    while queueHead <= #queue do
+        local cell = queue[queueHead]
+        queueHead = queueHead + 1
         local cx, cy = cell[1], cell[2]
 
         if layer.data[cy][cx] == targetID then
-            MapData.SetTile(cx, cy, newTileID, layerIndex)
-            count = count + 1
+            cells[#cells + 1] = { x = cx, y = cy }
 
-            -- 四方向邻居
             local neighbors = {
                 { cx - 1, cy }, { cx + 1, cy },
                 { cx, cy - 1 }, { cx, cy + 1 },
@@ -799,6 +789,74 @@ function MapData.FloodFill(startX, startY, newTileID, layerIndex)
         end
     end
 
+    return cells, targetID
+end
+
+--- 洪水填充（BFS，从指定起点替换同色连通区域）
+---@param startX number 起点 X (1-based)
+---@param startY number 起点 Y (1-based)
+---@param newTileID number 填入的新瓦片 ID
+---@param layerIndex number|nil 层索引（nil = 当前层）
+---@return number count 填充的格数
+function MapData.FloodFill(startX, startY, newTileID, layerIndex)
+    layerIndex = layerIndex or MapData.currentLayerIndex
+    if not MapData.InBounds(startX, startY) then return 0 end
+    local layer = MapData.layers[layerIndex]
+    if not layer then return 0 end
+
+    local cells, targetID = collectFloodFillCells(layer, startX, startY)
+    if targetID == newTileID then return 0 end -- 同色不需要填充
+    if not cells or #cells == 0 then return 0 end
+
+    local count = 0
+
+    MapData.BeginBatch()
+    for _, cell in ipairs(cells) do
+        if MapData.SetTile(cell.x, cell.y, newTileID, layerIndex) then
+            count = count + 1
+        end
+    end
+    MapData.CommitBatch()
+    return count
+end
+
+--- 使用区域笔刷做图案泼漆（对连通区域按图案重复铺设）
+---@param startX number 起点 X (1-based)
+---@param startY number 起点 Y (1-based)
+---@param brushRegion table 区域笔刷 { width, height, tiles }
+---@param layerIndex number|nil 层索引（nil = 当前层）
+---@return number count 实际写入的格数
+function MapData.FloodFillPattern(startX, startY, brushRegion, layerIndex)
+    layerIndex = layerIndex or MapData.currentLayerIndex
+    if not MapData.InBounds(startX, startY) then return 0 end
+    if not brushRegion or not brushRegion.tiles or #brushRegion.tiles == 0 then return 0 end
+    if not brushRegion.width or not brushRegion.height or brushRegion.width <= 0 or brushRegion.height <= 0 then return 0 end
+
+    local layer = MapData.layers[layerIndex]
+    if not layer then return 0 end
+
+    local cells = collectFloodFillCells(layer, startX, startY)
+    if not cells or #cells == 0 then return 0 end
+
+    local pattern = {}
+    for _, tile in ipairs(brushRegion.tiles) do
+        if tile.dx and tile.dy and tile.id then
+            pattern[tile.dy] = pattern[tile.dy] or {}
+            pattern[tile.dy][tile.dx] = tile.id
+        end
+    end
+
+    local count = 0
+    MapData.BeginBatch()
+    for _, cell in ipairs(cells) do
+        local px = ((cell.x - startX) % brushRegion.width) + 1
+        local py = ((cell.y - startY) % brushRegion.height) + 1
+        local newTileID = pattern[py] and pattern[py][px] or nil
+        if newTileID and layer.data[cell.y][cell.x] ~= newTileID
+           and MapData.SetTile(cell.x, cell.y, newTileID, layerIndex) then
+            count = count + 1
+        end
+    end
     MapData.CommitBatch()
     return count
 end

@@ -494,8 +494,14 @@ local function performFloodFill(mx, my)
     if not MapData.InBounds(mx, my) then return end
     if MapData.IsLayerLocked(MapData.GetCurrentLayer()) then return end
 
-    local tileID = IsoCanvas.getSelectedTileID and IsoCanvas.getSelectedTileID() or 1
-    local count = MapData.FloodFill(mx, my, tileID)
+    local brushRegion = IsoCanvas.getSelectedBrushRegion and IsoCanvas.getSelectedBrushRegion() or nil
+    local count = 0
+    if brushRegion and brushRegion.tiles and #brushRegion.tiles > 0 then
+        count = MapData.FloodFillPattern(mx, my, brushRegion)
+    else
+        local tileID = IsoCanvas.getSelectedTileID and IsoCanvas.getSelectedTileID() or 1
+        count = MapData.FloodFill(mx, my, tileID)
+    end
     if count > 0 then
         print(string.format("[IsoCanvas] 洪水填充: %d 格", count))
     end
