@@ -1028,27 +1028,31 @@ local function findTilesetTileAt(tileset, meta, localX, localY)
     return nil
 end
 
-local function drawTilesetHighlight(nvg, layout, rect, fillColor, strokeColor, strokeWidth)
+local function drawTilesetHighlight(nvg, layout, rect, fillColor, strokeColor, strokeWidth, offsetX, offsetY)
     if not rect then return end
     strokeWidth = strokeWidth or 1
+    offsetX = offsetX or 0
+    offsetY = offsetY or 0
 
     nvgBeginPath(nvg)
-    nvgRect(nvg, layout.x + rect.x, layout.y + rect.y, rect.w, rect.h)
+    nvgRect(nvg, layout.x + rect.x - offsetX, layout.y + rect.y - offsetY, rect.w, rect.h)
     nvgFillColor(nvg, nvgRGBA(fillColor[1], fillColor[2], fillColor[3], fillColor[4]))
     nvgFill(nvg)
 
     nvgBeginPath(nvg)
-    nvgRect(nvg, layout.x + rect.x + 0.5, layout.y + rect.y + 0.5, rect.w - 1, rect.h - 1)
+    nvgRect(nvg, layout.x + rect.x - offsetX + 0.5, layout.y + rect.y - offsetY + 0.5, rect.w - 1, rect.h - 1)
     nvgStrokeColor(nvg, nvgRGBA(strokeColor[1], strokeColor[2], strokeColor[3], strokeColor[4]))
     nvgStrokeWidth(nvg, strokeWidth)
     nvgStroke(nvg)
 end
 
-local function drawTilesetSelectionEffect(nvg, layout, rect)
+local function drawTilesetSelectionEffect(nvg, layout, rect, offsetX, offsetY)
     if not rect then return end
+    offsetX = offsetX or 0
+    offsetY = offsetY or 0
 
-    local x = layout.x + rect.x
-    local y = layout.y + rect.y
+    local x = layout.x + rect.x - offsetX
+    local y = layout.y + rect.y - offsetY
     local w = rect.w
     local h = rect.h
     local corner = math.max(4, math.min(w, h) * 0.35)
@@ -1127,10 +1131,16 @@ local function ensureTilesetViewWidget()
         if not tileset or not meta then return end
 
         local l = self:GetAbsoluteLayout()
+        local scrollX = self._scrollX or 0
+        local scrollY = self._scrollY or 0
+
+        nvgSave(nvg)
+        nvgIntersectScissor(nvg, l.x, l.y, l.w, l.h)
+
         local handle = ensureCachedImageHandle(nvg, tileset.imagePath)
         if handle and handle ~= 0 then
-            -- 图集视图按控件实际尺寸铺开，避免尺寸缓存异常时整张图被压进左上角小块。
-            local paint = nvgImagePattern(nvg, l.x, l.y, l.w, l.h, 0, handle, 1.0)
+            -- 以真实图集尺寸映射到底图，再通过 scrollX/scrollY 裁剪可视窗口。
+            local paint = nvgImagePattern(nvg, l.x - scrollX, l.y - scrollY, meta.maxW, meta.maxH, 0, handle, 1.0)
             nvgBeginPath(nvg)
             nvgRect(nvg, l.x, l.y, l.w, l.h)
             nvgFillPaint(nvg, paint)
@@ -1144,7 +1154,7 @@ local function ensureTilesetViewWidget()
 
         local selected = meta.tileByID[selectedTileID]
         if selected and selected.rect then
-            drawTilesetSelectionEffect(nvg, l, selected.rect)
+            drawTilesetSelectionEffect(nvg, l, selected.rect, scrollX, scrollY)
         end
 
         local hovered = self._hoverTile
@@ -1153,9 +1163,13 @@ local function ensureTilesetViewWidget()
                 nvg, l, hovered.rect,
                 { 255, 255, 255, 35 },
                 { 255, 255, 255, 180 },
-                1
+                1,
+                scrollX,
+                scrollY
             )
         end
+
+        nvgRestore(nvg)
     end
 end
 
@@ -1177,24 +1191,48 @@ showTilesetModal = function(tileset)
 
     local meta = buildTilesetMeta(tileset)
     ensureTilesetViewWidget()
+    local viewportW = math.min(meta.maxW, 600)
+    local viewportH = math.min(meta.maxH, 600)
+    local maxScrollX = math.max(0, meta.maxW - viewportW)
+    local maxScrollY = math.max(0, meta.maxH - viewportH)
+    local scrollX = 0
+    local scrollY = 0
+    local wheelStep = 48
+    local horizontalScrollLabel = nil
+    local verticalScrollLabel = nil
+    local horizontalScrollSlider = nil
+    local verticalScrollSlider = nil
 
     local bgPanel = TilesetViewWidget {
-        width = meta.maxW,
-        minWidth = meta.maxW,
-        height = meta.maxH,
-        minHeight = meta.maxH,
+        width = viewportW,
+        minWidth = viewportW,
+        height = viewportH,
+        minHeight = viewportH,
         flexShrink = 0,
         backgroundColor = { 24, 26, 30, 255 },
         _tileset = tileset,
         _tilesetMeta = meta,
+        OnWheel = function(self, dx, dy)
+            local shift = input:GetQualifierDown(QUAL_SHIFT)
+            if shift and maxScrollX > 0 then
+                scrollX = math.max(0, math.min(maxScrollX, scrollX - dy * wheelStep))
+                syncTilesetViewport()
+                return
+            end
+
+            if maxScrollY > 0 then
+                scrollY = math.max(0, math.min(maxScrollY, scrollY - dy * wheelStep))
+                syncTilesetViewport()
+            end
+        end,
         onPointerDown = function(event, widget)
             if event.button ~= MOUSEB_LEFT then
                 return
             end
 
             local layout = widget:GetAbsoluteLayout()
-            local localX = event.x - layout.x
-            local localY = event.y - layout.y
+            local localX = event.x - layout.x + (widget._scrollX or 0)
+            local localY = event.y - layout.y + (widget._scrollY or 0)
             local tile = findTilesetTileAt(tileset, meta, localX, localY)
             widget._hoverTile = tile
             if tile then
@@ -1203,34 +1241,129 @@ showTilesetModal = function(tileset)
         end,
         onPointerMove = function(event, widget)
             local layout = widget:GetAbsoluteLayout()
-            local localX = event.x - layout.x
-            local localY = event.y - layout.y
+            local localX = event.x - layout.x + (widget._scrollX or 0)
+            local localY = event.y - layout.y + (widget._scrollY or 0)
             widget._hoverTile = findTilesetTileAt(tileset, meta, localX, localY)
         end,
         onPointerUp = function(event, widget)
             if event.button == MOUSEB_LEFT then
                 local layout = widget:GetAbsoluteLayout()
-                local localX = event.x - layout.x
-                local localY = event.y - layout.y
+                local localX = event.x - layout.x + (widget._scrollX or 0)
+                local localY = event.y - layout.y + (widget._scrollY or 0)
                 widget._hoverTile = findTilesetTileAt(tileset, meta, localX, localY)
             end
         end,
     }
 
-    local tilesetContent = UI.Panel {
-        width = meta.maxW,
-        minWidth = meta.maxW,
-        height = meta.maxH,
-        minHeight = meta.maxH,
-        flexShrink = 0,
+    bgPanel._scrollX = scrollX
+    bgPanel._scrollY = scrollY
+
+    local function syncTilesetViewport()
+        bgPanel._scrollX = scrollX
+        bgPanel._scrollY = scrollY
+        if horizontalScrollLabel then
+            horizontalScrollLabel:SetText(string.format("横向滚动 %d/%d", scrollX, maxScrollX))
+        end
+        if verticalScrollLabel then
+            verticalScrollLabel:SetText(string.format("纵向滚动 %d/%d", scrollY, maxScrollY))
+        end
+        if horizontalScrollSlider then
+            if horizontalScrollSlider.SetValue then
+                horizontalScrollSlider:SetValue(scrollX)
+            else
+                horizontalScrollSlider.props.value = scrollX
+            end
+        end
+        if verticalScrollSlider then
+            if verticalScrollSlider.SetValue then
+                verticalScrollSlider:SetValue(scrollY)
+            else
+                verticalScrollSlider.props.value = scrollY
+            end
+        end
+    end
+
+    local viewportPanel = UI.Panel {
+        width = viewportW,
+        minWidth = viewportW,
+        height = viewportH,
+        minHeight = viewportH,
+        overflow = "hidden",
+        backgroundColor = { 24, 26, 30, 255 },
         children = { bgPanel }
     }
+
+    local scrollControls = {
+        viewportPanel,
+    }
+
+    if maxScrollX > 0 then
+        scrollControls[#scrollControls + 1] = UI.Panel {
+            gap = 4,
+            children = {
+                (function()
+                    horizontalScrollLabel = UI.Label {
+                        text = string.format("横向滚动 %d/%d", scrollX, maxScrollX),
+                        fontSize = 10,
+                        fontColor = { 140, 150, 170, 255 },
+                    }
+                    return horizontalScrollLabel
+                end)(),
+                (function()
+                    horizontalScrollSlider = UI.Slider {
+                        value = 0,
+                        min = 0,
+                        max = maxScrollX,
+                        step = 1,
+                        height = 18,
+                        onChange = function(self, v)
+                            scrollX = math.floor(v)
+                            syncTilesetViewport()
+                        end,
+                    }
+                    return horizontalScrollSlider
+                end)(),
+            }
+        }
+    end
+
+    if maxScrollY > 0 then
+        scrollControls[#scrollControls + 1] = UI.Panel {
+            gap = 4,
+            children = {
+                (function()
+                    verticalScrollLabel = UI.Label {
+                        text = string.format("纵向滚动 %d/%d", scrollY, maxScrollY),
+                        fontSize = 10,
+                        fontColor = { 140, 150, 170, 255 },
+                    }
+                    return verticalScrollLabel
+                end)(),
+                (function()
+                    verticalScrollSlider = UI.Slider {
+                        value = 0,
+                        min = 0,
+                        max = maxScrollY,
+                        step = 1,
+                        height = 18,
+                        onChange = function(self, v)
+                            scrollY = math.floor(v)
+                            syncTilesetViewport()
+                        end,
+                    }
+                    return verticalScrollSlider
+                end)(),
+            }
+        }
+    end
+
+    syncTilesetViewport()
 
     -- 构建悬浮窗（带标题栏拖拽）
     activeTilesetPanel = UI.Panel {
         position = "absolute",
-        left = graphics.width / UI.GetScale() / 2 - math.min(meta.maxW, 600) / 2,
-        top = graphics.height / UI.GetScale() / 2 - math.min(meta.maxH, 600) / 2,
+        left = graphics.width / UI.GetScale() / 2 - viewportW / 2,
+        top = graphics.height / UI.GetScale() / 2 - viewportH / 2,
         backgroundColor = { 40, 42, 48, 255 },
         borderColor = { 80, 80, 90, 255 },
         borderWidth = 1,
@@ -1263,13 +1396,12 @@ showTilesetModal = function(tileset)
                     }
                 }
             },
-            -- 滚动内容区
+            -- 视口 + 滚动条
             UI.Panel {
-                width = math.min(meta.maxW + 20, 600),
-                height = math.min(meta.maxH + 20, 600),
-                overflow = "scroll",
+                width = viewportW + 20,
                 padding = 10,
-                children = { tilesetContent }
+                gap = 8,
+                children = scrollControls
             }
         }
     }
