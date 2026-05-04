@@ -13,6 +13,7 @@ local EditorUI = {}
 -- 编辑器状态
 local currentTool = "brush"    -- "brush" | "eraser" | "fill" | "picker"
 local selectedTileID = 1       -- 当前选中瓦片 ID
+local selectedBrushRegion = nil -- 当前选中的图集区域笔刷 { width, height, tiles, tileIDs, anchorID, imagePath, tilesetName }
 
 -- UI 引用
 local statusLabel = nil
@@ -117,6 +118,34 @@ function EditorUI.GetSelectedTileID()
     return selectedTileID
 end
 
+local function isSameRect(a, b)
+    return a and b
+        and a.x == b.x and a.y == b.y
+        and a.w == b.w and a.h == b.h
+end
+
+local function isBrushRegionValid(region)
+    if not region or not region.tiles or #region.tiles == 0 then
+        return false
+    end
+
+    for _, entry in ipairs(region.tiles) do
+        local tileType = MapData.GetTileType(entry.id)
+        if not tileType or tileType.imagePath ~= region.imagePath or not isSameRect(tileType.rect, entry.rect) then
+            return false
+        end
+    end
+
+    return true
+end
+
+function EditorUI.GetSelectedBrushRegion()
+    if selectedBrushRegion and not isBrushRegionValid(selectedBrushRegion) then
+        selectedBrushRegion = nil
+    end
+    return selectedBrushRegion
+end
+
 -- ============================================================================
 -- 工具切换
 -- ============================================================================
@@ -169,13 +198,26 @@ end
 
 local tilesetButtons = {}
 
+local function isTileSelected(tileID)
+    if tileID == selectedTileID then
+        return true
+    end
+    return selectedBrushRegion
+        and selectedBrushRegion.tileIDs
+        and selectedBrushRegion.tileIDs[tileID] == true
+end
+
+local function clearSelectedBrushRegion()
+    selectedBrushRegion = nil
+end
+
 local function updateTileButtons()
     for id, btn in pairs(tileButtons) do
         btn:SetStyle({
-            borderColor = id == selectedTileID
+            borderColor = isTileSelected(id)
                 and { 255, 255, 255, 255 }
                 or { 80, 80, 90, 255 },
-            borderWidth = id == selectedTileID and 2 or 1,
+            borderWidth = isTileSelected(id) and 2 or 1,
         })
     end
 
@@ -183,7 +225,7 @@ local function updateTileButtons()
         local active = false
         if btn.props._tileset and btn.props._tileset.tiles then
             for _, tile in ipairs(btn.props._tileset.tiles) do
-                if tile.id == selectedTileID then
+                if isTileSelected(tile.id) then
                     active = true
                     break
                 end
@@ -198,6 +240,7 @@ end
 
 local function selectTile(tileID)
     selectedTileID = tileID
+    clearSelectedBrushRegion()
     currentTool = "brush"  -- 选瓦片自动切换画笔
     updateToolButtons()
     updateTileButtons()
@@ -222,6 +265,9 @@ function EditorUI.UpdateStatus(mx, my)
     local toolNames = { brush = "画笔", eraser = "橡皮擦", fill = "填充", flood = "洪水填充", select = "选区", picker = "取色" }
     local toolName = toolNames[currentTool] or currentTool
     local tileName = MapData.GetTileType(selectedTileID).name
+    if selectedBrushRegion and selectedBrushRegion.width and selectedBrushRegion.height then
+        tileName = string.format("%s [%dx%d]", tileName, selectedBrushRegion.width, selectedBrushRegion.height)
+    end
 
     if PlayMode.IsActive() then
         local gx, gy = PlayMode.GetGridPosition()
@@ -598,6 +644,7 @@ local function CreateToolbar()
                     if saveData.width then MapData.MAP_W = saveData.width end
                     if saveData.height then MapData.MAP_H = saveData.height end
                     if saveData.showGrid ~= nil then MapData.showGrid = saveData.showGrid end
+                    clearSelectedBrushRegion()
                     if saveData.imageRegistry then
                         MapData.imageFolder = saveData.imageFolder or ""
                         MapData.RestoreImageRegistry(saveData.imageRegistry)
@@ -1030,6 +1077,120 @@ local function findTilesetTileAt(tileset, meta, localX, localY)
     return nil
 end
 
+local function collectTilesetTilesInRect(tileset, startX, startY, endX, endY)
+    local minX = math.min(startX, endX)
+    local maxX = math.max(startX, endX)
+    local minY = math.min(startY, endY)
+    local maxY = math.max(startY, endY)
+    local tiles = {}
+
+    for _, tile in ipairs(tileset.tiles or {}) do
+        local rect = tile.rect
+        if rect
+           and rect.x < maxX and rect.x + rect.w > minX
+           and rect.y < maxY and rect.y + rect.h > minY then
+            tiles[#tiles + 1] = tile
+        end
+    end
+
+    table.sort(tiles, function(a, b)
+        if a.rect.y ~= b.rect.y then
+            return a.rect.y < b.rect.y
+        end
+        return a.rect.x < b.rect.x
+    end)
+
+    return tiles
+end
+
+local function buildBrushRegionFromTiles(tileset, meta, tiles)
+    if not meta or not meta.grid or not tiles or #tiles == 0 then
+        return nil
+    end
+
+    local minCol = nil
+    local maxCol = nil
+    local minRow = nil
+    local maxRow = nil
+    local cellW = meta.grid.cellW
+    local cellH = meta.grid.cellH
+
+    for _, tile in ipairs(tiles) do
+        local rect = tile.rect
+        if rect then
+            local col = math.floor(rect.x / cellW)
+            local row = math.floor(rect.y / cellH)
+            minCol = minCol and math.min(minCol, col) or col
+            maxCol = maxCol and math.max(maxCol, col) or col
+            minRow = minRow and math.min(minRow, row) or row
+            maxRow = maxRow and math.max(maxRow, row) or row
+        end
+    end
+
+    if minCol == nil or minRow == nil or maxCol == nil or maxRow == nil then
+        return nil
+    end
+
+    local anchorTile = nil
+    local tileIDs = {}
+    local regionTiles = {}
+    for _, tile in ipairs(tiles) do
+        local rect = tile.rect
+        if rect then
+            local col = math.floor(rect.x / cellW)
+            local row = math.floor(rect.y / cellH)
+            local dx = col - minCol + 1
+            local dy = row - minRow + 1
+            regionTiles[#regionTiles + 1] = {
+                dx = dx,
+                dy = dy,
+                id = tile.id,
+                rect = rect,
+            }
+            tileIDs[tile.id] = true
+            if not anchorTile
+               or dy < anchorTile.dy
+               or (dy == anchorTile.dy and dx < anchorTile.dx) then
+                anchorTile = { id = tile.id, dx = dx, dy = dy }
+            end
+        end
+    end
+
+    table.sort(regionTiles, function(a, b)
+        if a.dy ~= b.dy then
+            return a.dy < b.dy
+        end
+        return a.dx < b.dx
+    end)
+
+    return {
+        width = maxCol - minCol + 1,
+        height = maxRow - minRow + 1,
+        tiles = regionTiles,
+        tileIDs = tileIDs,
+        anchorID = anchorTile and anchorTile.id or tiles[1].id,
+        imagePath = tileset.imagePath,
+        tilesetName = tileset.name,
+    }
+end
+
+local function selectTilesetRegion(tileset, tiles)
+    local meta = buildTilesetMeta(tileset)
+    local region = buildBrushRegionFromTiles(tileset, meta, tiles)
+    if not region then
+        return
+    end
+
+    selectedBrushRegion = region
+    selectedTileID = region.anchorID
+    currentTool = "brush"
+    updateToolButtons()
+    updateTileButtons()
+    rebuildTileProps()
+    EditorUI.UpdateStatus()
+    EditorUI.ShowToast(string.format("已选择图集区域 %dx%d", region.width, region.height))
+end
+
 local function drawTilesetHighlight(nvg, layout, rect, fillColor, strokeColor, strokeWidth, offsetX, offsetY)
     if not rect then return end
     strokeWidth = strokeWidth or 1
@@ -1154,13 +1315,25 @@ local function ensureTilesetViewWidget()
             nvgFill(nvg)
         end
 
-        local selected = meta.tileByID[selectedTileID]
-        if selected and selected.rect then
-            drawTilesetSelectionEffect(nvg, l, selected.rect, scrollX, scrollY)
+        local selectedRegion = selectedBrushRegion
+        local regionMatchesTileset = selectedRegion
+            and selectedRegion.imagePath == tileset.imagePath
+            and selectedRegion.tilesetName == tileset.name
+        if regionMatchesTileset and selectedRegion.tiles then
+            for _, entry in ipairs(selectedRegion.tiles) do
+                if entry.rect then
+                    drawTilesetSelectionEffect(nvg, l, entry.rect, scrollX, scrollY)
+                end
+            end
+        else
+            local selected = meta.tileByID[selectedTileID]
+            if selected and selected.rect then
+                drawTilesetSelectionEffect(nvg, l, selected.rect, scrollX, scrollY)
+            end
         end
 
         local hovered = self._hoverTile
-        if hovered and hovered.rect and hovered.id ~= selectedTileID then
+        if hovered and hovered.rect and not isTileSelected(hovered.id) then
             drawTilesetHighlight(
                 nvg, l, hovered.rect,
                 { 255, 255, 255, 35 },
@@ -1169,6 +1342,23 @@ local function ensureTilesetViewWidget()
                 scrollX,
                 scrollY
             )
+        end
+
+        if self._selectionDrag and self._selectionStartX and self._selectionStartY
+           and self._selectionCurrentX and self._selectionCurrentY then
+            local boxX = math.min(self._selectionStartX, self._selectionCurrentX) - scrollX
+            local boxY = math.min(self._selectionStartY, self._selectionCurrentY) - scrollY
+            local boxW = math.abs(self._selectionCurrentX - self._selectionStartX)
+            local boxH = math.abs(self._selectionCurrentY - self._selectionStartY)
+            nvgBeginPath(nvg)
+            nvgRect(nvg, l.x + boxX, l.y + boxY, boxW, boxH)
+            nvgFillColor(nvg, nvgRGBA(59, 130, 246, 40))
+            nvgFill(nvg)
+            nvgBeginPath(nvg)
+            nvgRect(nvg, l.x + boxX + 0.5, l.y + boxY + 0.5, math.max(0, boxW - 1), math.max(0, boxH - 1))
+            nvgStrokeColor(nvg, nvgRGBA(59, 130, 246, 220))
+            nvgStrokeWidth(nvg, 1.5)
+            nvgStroke(nvg)
         end
 
         nvgRestore(nvg)
@@ -1240,15 +1430,21 @@ showTilesetModal = function(tileset)
             local localY = event.y - layout.y + (widget._scrollY or 0)
             local tile = findTilesetTileAt(tileset, meta, localX, localY)
             widget._hoverTile = tile
-            if tile then
-                selectTile(tile.id)
-            end
+            widget._selectionDrag = true
+            widget._selectionStartX = localX
+            widget._selectionStartY = localY
+            widget._selectionCurrentX = localX
+            widget._selectionCurrentY = localY
         end,
         onPointerMove = function(event, widget)
             local layout = widget:GetAbsoluteLayout()
             local localX = event.x - layout.x + (widget._scrollX or 0)
             local localY = event.y - layout.y + (widget._scrollY or 0)
             widget._hoverTile = findTilesetTileAt(tileset, meta, localX, localY)
+            if widget._selectionDrag then
+                widget._selectionCurrentX = localX
+                widget._selectionCurrentY = localY
+            end
         end,
         onPointerUp = function(event, widget)
             if event.button == MOUSEB_LEFT then
@@ -1256,6 +1452,32 @@ showTilesetModal = function(tileset)
                 local localX = event.x - layout.x + (widget._scrollX or 0)
                 local localY = event.y - layout.y + (widget._scrollY or 0)
                 widget._hoverTile = findTilesetTileAt(tileset, meta, localX, localY)
+                local startX = widget._selectionStartX or localX
+                local startY = widget._selectionStartY or localY
+                local movedFarEnough = math.abs(localX - startX) > 4 or math.abs(localY - startY) > 4
+                local pickedTiles = collectTilesetTilesInRect(tileset, startX, startY, localX, localY)
+                if movedFarEnough and #pickedTiles > 1 then
+                    if meta.grid then
+                        selectTilesetRegion(tileset, pickedTiles)
+                    else
+                        clearSelectedBrushRegion()
+                        EditorUI.ShowToast("该图集切片不规则，暂不支持拉框多选")
+                        local tile = widget._hoverTile or pickedTiles[1]
+                        if tile then
+                            selectTile(tile.id)
+                        end
+                    end
+                else
+                    local tile = widget._hoverTile or findTilesetTileAt(tileset, meta, localX, localY)
+                    if tile then
+                        selectTile(tile.id)
+                    end
+                end
+                widget._selectionDrag = false
+                widget._selectionStartX = nil
+                widget._selectionStartY = nil
+                widget._selectionCurrentX = nil
+                widget._selectionCurrentY = nil
             end
         end,
     }
@@ -1447,6 +1669,8 @@ end
 rebuildImagePalette = function()
     if not imagePaletteGrid then return end
 
+    clearSelectedBrushRegion()
+
     -- 清空旧按钮
     imagePaletteGrid:RemoveAllChildren()
     closeTilesetPanel()
@@ -1495,6 +1719,7 @@ local function performScan(folder)
         EditorUI.ShowToast("请输入文件夹路径")
         return
     end
+    clearSelectedBrushRegion()
     local count = MapData.ScanAndLoadImages(folder)
     if count > 0 then
         EditorUI.ShowToast(string.format("已加载 %d 张图片", count))
@@ -2167,6 +2392,7 @@ showLoadModal = function()
             marginBottom = 4,
             onClick = function()
                 modal:Close()
+                clearSelectedBrushRegion()
                 if MapData.LoadFromNamedFile(name) then
                     refreshAfterLoad()
                     -- 同步到云端（持久化，刷新页面不丢失）
@@ -2565,6 +2791,7 @@ function EditorUI.Build()
     -- 连接 IsoCanvas 回调
     IsoCanvas.getSelectedTool = EditorUI.GetSelectedTool
     IsoCanvas.getSelectedTileID = EditorUI.GetSelectedTileID
+    IsoCanvas.getSelectedBrushRegion = EditorUI.GetSelectedBrushRegion
     IsoCanvas.onHoverChanged = function(mx, my)
         EditorUI.UpdateStatus(mx, my)
     end

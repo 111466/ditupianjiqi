@@ -78,6 +78,7 @@ local isPasteMode = false       -- 是否处于粘贴预览模式
 -- 外部引用（由 EditorUI 设置）
 IsoCanvas.getSelectedTool = nil    -- function() → "brush" | "eraser" | "fill" | "picker" | "flood" | "select"
 IsoCanvas.getSelectedTileID = nil  -- function() → number
+IsoCanvas.getSelectedBrushRegion = nil -- function() → table|nil
 IsoCanvas.onHoverChanged = nil     -- function(mx, my)
 IsoCanvas.onTilePicked = nil       -- function(tileID) 拾色器回调
 IsoCanvas.onSelectionChanged = nil -- function(hasSelection) 选区变化回调
@@ -415,6 +416,20 @@ end
 -- ============================================================================
 
 --- 处理绘制操作（单格）
+local function paintBrushRegion(startX, startY, brushRegion)
+    if not brushRegion or not brushRegion.tiles then
+        return
+    end
+
+    for _, entry in ipairs(brushRegion.tiles) do
+        local tx = startX + entry.dx - 1
+        local ty = startY + entry.dy - 1
+        if MapData.InBounds(tx, ty) then
+            MapData.SetTile(tx, ty, entry.id)
+        end
+    end
+end
+
 local function performPaint(mx, my)
     if MapData.IsPreviewMode() then return end
     if not MapData.InBounds(mx, my) then return end
@@ -425,8 +440,13 @@ local function performPaint(mx, my)
     if tool == "eraser" then
         MapData.SetTile(mx, my, 0)
     elseif tool == "brush" then
-        local tileID = IsoCanvas.getSelectedTileID and IsoCanvas.getSelectedTileID() or 1
-        MapData.SetTile(mx, my, tileID)
+        local brushRegion = IsoCanvas.getSelectedBrushRegion and IsoCanvas.getSelectedBrushRegion() or nil
+        if brushRegion and brushRegion.tiles and #brushRegion.tiles > 0 then
+            paintBrushRegion(mx, my, brushRegion)
+        else
+            local tileID = IsoCanvas.getSelectedTileID and IsoCanvas.getSelectedTileID() or 1
+            MapData.SetTile(mx, my, tileID)
+        end
     end
 end
 
@@ -831,8 +851,23 @@ function IsoCanvas.CreatePanel(UI)
                 drawTileShape(nvg, cx, cy, 255, 215, 0, 50)
                 strokeTileShape(nvg, cx, cy, 255, 215, 0, 180, 2)
             else
-                drawTileShape(nvg, cx, cy, 255, 255, 255, 40)
-                strokeTileShape(nvg, cx, cy, 255, 255, 255, 180, 2)
+                local brushRegion = IsoCanvas.getSelectedBrushRegion and IsoCanvas.getSelectedBrushRegion() or nil
+                if brushRegion and brushRegion.tiles and #brushRegion.tiles > 0 then
+                    for _, entry in ipairs(brushRegion.tiles) do
+                        local tx = hoverMapX + entry.dx - 1
+                        local ty = hoverMapY + entry.dy - 1
+                        if MapData.InBounds(tx, ty) then
+                            local psx, psy = mapToScreen(tx, ty)
+                            local pcx = psx + ox
+                            local pcy = psy + oy
+                            drawTileShape(nvg, pcx, pcy, 255, 255, 255, 35)
+                            strokeTileShape(nvg, pcx, pcy, 255, 255, 255, 170, 1.5)
+                        end
+                    end
+                else
+                    drawTileShape(nvg, cx, cy, 255, 255, 255, 40)
+                    strokeTileShape(nvg, cx, cy, 255, 255, 255, 180, 2)
+                end
             end
         end
 
