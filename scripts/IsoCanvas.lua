@@ -234,7 +234,8 @@ local function drawImageTile(nvg, cx, cy, imagePath, flipH, tileType)
         -- 补偿旋转45度带来的对角线放大 (1 / math.sqrt(2))
         nvgScale(nvg, 0.70710678, 0.70710678)
         
-        nvgRotate(nvg, math.pi / 4)  -- 旋转45度
+        nvgRotate(nvg, -math.pi / 4)  -- 旋转-45度，使图片底边（正面）映射到右下边缘
+
         
         -- 水平翻转：现在以0,0为中心
         if flipH then
@@ -258,8 +259,9 @@ local function drawImageTile(nvg, cx, cy, imagePath, flipH, tileType)
     end
 
     -- 默认垂直模式 (renderMode == "vertical")
-    -- 底部锚定：图片底边对齐菱形底点 (cx, cy + tileHH)
-    local drawX = cx - oneTileW / 2
+    -- 底部锚定：图片底边对齐菱形底点 (cy + tileHH)
+    -- 水平方向：向两边等距铺开 (中心对齐 cx)
+    local drawX = cx - drawW / 2
     local drawY
     if renderMode == "floor" then
         -- 如果已经是等距视角的菱形贴图，则中心对齐
@@ -332,8 +334,8 @@ local function drawImageTileTD(nvg, cx, cy, imagePath, flipH, tileType)
     
     local renderMode = tileType and tileType.renderMode or "vertical"
     
-    -- 底部锚定
-    local drawX = cx - tdTileW / 2
+    -- 底部锚定，水平方向向两边等距铺开
+    local drawX = cx - drawW / 2
     local drawY
     if renderMode == "flat" or renderMode == "floor" then
         drawY = cy - drawH / 2
