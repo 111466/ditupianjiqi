@@ -927,8 +927,8 @@ local function closeTilesetPanel()
 end
 
 showTilesetModal = function(tileset)
-    -- 如果已经打开了同一个图集，就不用再开了；否则先关掉旧的
-    if activeTilesetData and activeTilesetData.name == tileset.name then
+    -- 仅当点击的是当前这份图集数据时才复用弹窗；重新扫描后同名图集也要刷新
+    if activeTilesetData == tileset then
         return
     end
     closeTilesetPanel()
@@ -1089,6 +1089,7 @@ rebuildImagePalette = function()
 
     -- 清空旧按钮
     imagePaletteGrid:RemoveAllChildren()
+    closeTilesetPanel()
     
     for id, _ in pairs(tileButtons) do
         if MapData.IsImageTile(id) then
@@ -1111,6 +1112,16 @@ rebuildImagePalette = function()
             imagePaletteGrid:AddChild(CreateTileButton(item.id))
         elseif item.type == "tileset" then
             imagePaletteGrid:AddChild(CreateTilesetButton(item))
+        end
+    end
+
+    -- 重新扫描后，旧图集弹窗中的历史 ID 可能已经失效；这里把选中项纠正回有效瓦片。
+    if selectedTileID ~= 0 and MapData.IsImageTile(selectedTileID) then
+        local tt = MapData.GetTileType(selectedTileID)
+        if not tt or not tt.imagePath then
+            selectedTileID = items[1] and ((items[1].type == "single" and items[1].id) or (items[1].tiles and items[1].tiles[1] and items[1].tiles[1].id)) or 1
+            rebuildTileProps()
+            EditorUI.UpdateStatus()
         end
     end
 
