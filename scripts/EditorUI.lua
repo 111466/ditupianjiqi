@@ -1180,7 +1180,10 @@ showTilesetModal = function(tileset)
 
     local bgPanel = TilesetViewWidget {
         width = meta.maxW,
+        minWidth = meta.maxW,
         height = meta.maxH,
+        minHeight = meta.maxH,
+        flexShrink = 0,
         backgroundColor = { 24, 26, 30, 255 },
         _tileset = tileset,
         _tilesetMeta = meta,
@@ -1212,6 +1215,15 @@ showTilesetModal = function(tileset)
                 widget._hoverTile = findTilesetTileAt(tileset, meta, localX, localY)
             end
         end,
+    }
+
+    local tilesetContent = UI.Panel {
+        width = meta.maxW,
+        minWidth = meta.maxW,
+        height = meta.maxH,
+        minHeight = meta.maxH,
+        flexShrink = 0,
+        children = { bgPanel }
     }
 
     -- 构建悬浮窗（带标题栏拖拽）
@@ -1257,7 +1269,7 @@ showTilesetModal = function(tileset)
                 height = math.min(meta.maxH + 20, 600),
                 overflow = "scroll",
                 padding = 10,
-                children = { bgPanel }
+                children = { tilesetContent }
             }
         }
     }
