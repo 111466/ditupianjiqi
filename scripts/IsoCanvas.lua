@@ -128,7 +128,7 @@ end
 
 --- 绘制填充菱形（使用当前缩放尺寸）
 local function drawDiamond(nvg, cx, cy, r, g, b, a)
-    local overlap = 0.5 -- 增加 0.5 像素的重叠以消除抗锯齿拼接缝隙
+    local overlap = 1.0 -- 增加 1.0 像素的重叠以消除抗锯齿拼接缝隙
     nvgBeginPath(nvg)
     nvgMoveTo(nvg, cx, cy - tileHH - overlap)
     nvgLineTo(nvg, cx + tileWH + overlap, cy)
@@ -154,7 +154,7 @@ end
 
 --- 绘制填充矩形（正视45度模式）
 local function drawTDRect(nvg, cx, cy, r, g, b, a)
-    local overlap = 0.5
+    local overlap = 1.0
     nvgBeginPath(nvg)
     nvgRect(nvg, cx - tdTileW / 2 - overlap, cy - tdTileH / 2 - overlap, tdTileW + overlap * 2, tdTileH + overlap * 2)
     nvgFillColor(nvg, nvgRGBA(r, g, b, a))
@@ -354,6 +354,7 @@ local function drawImageTileTD(nvg, cx, cy, imagePath, flipH, tileType)
     if renderMode == "flat" or renderMode == "floor" then
         drawY = cy - drawH / 2
     else
+        -- 正视模式下，物体默认锚定到格子底边
         drawY = (cy + tdTileH / 2) - drawH
     end
 
@@ -678,7 +679,35 @@ function IsoCanvas.CreatePanel(UI)
                         local sx, sy = mapToScreen(mx, my)
                         local cx = sx + ox
                         local cy = sy + oy
-                        local footYVal = (viewMode == "topdown") and (cy + tdTileH / 2) or (cy + tileHH)
+                        local footYVal
+                        if viewMode == "topdown" then
+                            local tempTT = MapData.GetTileType(tileID)
+                            local tempRenderMode = tempTT.renderMode or "vertical"
+                            if tempRenderMode == "flat" or tempRenderMode == "floor" then
+                                -- 正视模式下，flat 贴图使用其网格中心Y + 渲染高度/2 作为排序依据(即渲染出的图片的底边)
+                                -- 这样在同一图层内，Y坐标较大的（靠下的）会后渲染，从而正确覆盖上方放大的 flat 贴图
+                                local imgHandle = getOrLoadImage(nvg, tempTT.imagePath)
+                                local imgH = 0
+                                if imgHandle ~= 0 then
+                                    if not imageSizeCache[imgHandle] then
+                                        local w, h = nvgImageSize(nvg, imgHandle)
+                                        imageSizeCache[imgHandle] = { w = w, h = h }
+                                    end
+                                    imgH = imageSizeCache[imgHandle].h
+                                end
+                                local drawH = (tempTT.rect and tempTT.rect.h or imgH) * (tdTileW / BASE_PX_PER_TILE) * (tempTT.scale or 1.0)
+                                footYVal = cy + drawH / 2
+                            else
+                                footYVal = cy + tdTileH / 2
+                            end
+                        else
+                            footYVal = cy + tileHH
+                        end
+                        
+                        local tt = MapData.GetTileType(tileID)
+                        local renderMode = tt.renderMode or "vertical"
+                        local isFlat = (renderMode == "flat" or renderMode == "floor")
+
                         sortN = sortN + 1
                         sortList[sortN] = {
                             t = "tile",
@@ -690,6 +719,7 @@ function IsoCanvas.CreatePanel(UI)
                             id = tileID,
                             flipH = MapData.IsFlippedH(tileID),
                             alpha = alpha,
+                            isFlat = isFlat,
                         }
                     end
                 end
@@ -700,7 +730,13 @@ function IsoCanvas.CreatePanel(UI)
         -- 加入角色
         if playPX then
             local psx, psy = mapToScreen(playPX, playPY)
-            local charFootY = (viewMode == "topdown") and (psy + oy + tdTileH / 2) or (psy + oy + tileHH)
+            local charFootY
+            if viewMode == "topdown" then
+                charFootY = psy + oy + tdTileH / 2
+            else
+                charFootY = psy + oy + tileHH
+            end
+            
             sortN = sortN + 1
             sortList[sortN] = {
                 t = "char",
@@ -708,11 +744,28 @@ function IsoCanvas.CreatePanel(UI)
                 footX = psx + ox,
                 pri = 1,
                 li = 0,
+                isFlat = false,
             }
         end
 
-        -- 稳定排序：footY, footX, sortPriority, layerIdx
+        -- 稳定排序：
+        -- 1. isFlat: 铺地瓦片(flat/floor)优先渲染，确保不会遮挡立体物体
+        -- 2. 若均为 flat: 优先按图层(li)排序，保证高图层的铺地瓦片完全覆盖低图层
+        -- 3. 其他情况(包含立体物体): 按深度(footY) -> X坐标(footX) -> 优先级(pri) -> 图层(li) 进行真实遮挡排序
         table.sort(sortList, function(a, b)
+            if a.isFlat ~= b.isFlat then
+                return a.isFlat
+            end
+            
+            if a.isFlat and b.isFlat then
+                -- 都是 flat 的情况下，先按图层排序
+                if a.li ~= b.li then return a.li < b.li end
+                -- 同图层的 flat，正视模式下如果两个元素的渲染底边不同，按照底边 Y 进行排序
+                if viewMode == "topdown" and a.footY ~= b.footY then
+                    return a.footY < b.footY
+                end
+            end
+
             if a.footY ~= b.footY then return a.footY < b.footY end
             if a.footX ~= b.footX then return a.footX < b.footX end
             if a.pri ~= b.pri then return a.pri < b.pri end
