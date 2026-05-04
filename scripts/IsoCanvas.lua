@@ -128,11 +128,12 @@ end
 
 --- 绘制填充菱形（使用当前缩放尺寸）
 local function drawDiamond(nvg, cx, cy, r, g, b, a)
+    local overlap = 0.5 -- 增加 0.5 像素的重叠以消除抗锯齿拼接缝隙
     nvgBeginPath(nvg)
-    nvgMoveTo(nvg, cx, cy - tileHH)
-    nvgLineTo(nvg, cx + tileWH, cy)
-    nvgLineTo(nvg, cx, cy + tileHH)
-    nvgLineTo(nvg, cx - tileWH, cy)
+    nvgMoveTo(nvg, cx, cy - tileHH - overlap)
+    nvgLineTo(nvg, cx + tileWH + overlap, cy)
+    nvgLineTo(nvg, cx, cy + tileHH + overlap)
+    nvgLineTo(nvg, cx - tileWH - overlap, cy)
     nvgClosePath(nvg)
     nvgFillColor(nvg, nvgRGBA(r, g, b, a))
     nvgFill(nvg)
@@ -153,8 +154,9 @@ end
 
 --- 绘制填充矩形（正视45度模式）
 local function drawTDRect(nvg, cx, cy, r, g, b, a)
+    local overlap = 0.5
     nvgBeginPath(nvg)
-    nvgRect(nvg, cx - tdTileW / 2, cy - tdTileH / 2, tdTileW, tdTileH)
+    nvgRect(nvg, cx - tdTileW / 2 - overlap, cy - tdTileH / 2 - overlap, tdTileW + overlap * 2, tdTileH + overlap * 2)
     nvgFillColor(nvg, nvgRGBA(r, g, b, a))
     nvgFill(nvg)
 end
@@ -220,11 +222,16 @@ local function drawImageTile(nvg, cx, cy, imagePath, flipH, tileType)
     -- 像素比缩放：128px = 1格宽(tileWH*2)
     local oneTileW = tileWH * 2
     local scaleFactor = tileType and tileType.scale or 1.0
+    
+    local renderMode = tileType and tileType.renderMode or "vertical"
+    -- 针对地面铺设的瓦片（未手动配置 scale 的情况），增加极小的重叠（1.5%）以消除抗锯齿缝隙
+    if (renderMode == "flat" or renderMode == "floor") and not (tileType and tileType.scale) then
+        scaleFactor = 1.015
+    end
+
     local pxScale = (oneTileW / BASE_PX_PER_TILE) * scaleFactor
     local drawW = (sourceRect and sourceRect.w or imgInfo.w) * pxScale
     local drawH = (sourceRect and sourceRect.h or imgInfo.h) * pxScale
-
-    local renderMode = tileType and tileType.renderMode or "vertical"
 
     if renderMode == "flat" then
         -- 将正视角的正方形贴图，拍平到等距菱形上
@@ -330,11 +337,16 @@ local function drawImageTileTD(nvg, cx, cy, imagePath, flipH, tileType)
 
     -- 像素比缩放：128px = 1格宽(tdTileW)
     local scaleFactor = tileType and tileType.scale or 1.0
+    local renderMode = tileType and tileType.renderMode or "vertical"
+
+    -- 针对地面铺设的瓦片（未手动配置 scale 的情况），增加极小的重叠（1.5%）以消除抗锯齿缝隙
+    if (renderMode == "flat" or renderMode == "floor") and not (tileType and tileType.scale) then
+        scaleFactor = 1.015
+    end
+
     local pxScale = (tdTileW / BASE_PX_PER_TILE) * scaleFactor
     local drawW = (sourceRect and sourceRect.w or imgInfo.w) * pxScale
     local drawH = (sourceRect and sourceRect.h or imgInfo.h) * pxScale
-    
-    local renderMode = tileType and tileType.renderMode or "vertical"
     
     -- 底部锚定，水平方向向两边等距铺开
     local drawX = cx - drawW / 2
