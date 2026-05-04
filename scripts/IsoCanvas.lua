@@ -219,7 +219,8 @@ local function drawImageTile(nvg, cx, cy, imagePath, flipH, tileType)
 
     -- 像素比缩放：128px = 1格宽(tileWH*2)
     local oneTileW = tileWH * 2
-    local pxScale = oneTileW / BASE_PX_PER_TILE
+    local scaleFactor = tileType and tileType.scale or 1.0
+    local pxScale = (oneTileW / BASE_PX_PER_TILE) * scaleFactor
     local drawW = (sourceRect and sourceRect.w or imgInfo.w) * pxScale
     local drawH = (sourceRect and sourceRect.h or imgInfo.h) * pxScale
 
@@ -328,7 +329,8 @@ local function drawImageTileTD(nvg, cx, cy, imagePath, flipH, tileType)
     end
 
     -- 像素比缩放：128px = 1格宽(tdTileW)
-    local pxScale = tdTileW / BASE_PX_PER_TILE
+    local scaleFactor = tileType and tileType.scale or 1.0
+    local pxScale = (tdTileW / BASE_PX_PER_TILE) * scaleFactor
     local drawW = (sourceRect and sourceRect.w or imgInfo.w) * pxScale
     local drawH = (sourceRect and sourceRect.h or imgInfo.h) * pxScale
     

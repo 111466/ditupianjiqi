@@ -112,6 +112,9 @@ function MapData.RestoreImageRegistry(registry)
             if reg.tag and reg.tag ~= "" then
                 t.tag = reg.tag
             end
+            if reg.scale then
+                t.scale = reg.scale
+            end
             if reg.frames then
                 t.frames = reg.frames
                 t.fps = reg.fps
@@ -213,6 +216,7 @@ function MapData.ScanAndLoadImages(folder)
                     color = { 100, 100, 100, 255 },
                     tag = "",
                     renderMode = tile.renderMode or "vertical",
+                    scale = tile.scale or 1.0,
                 }
                 if tile.frames then
                     tileData.frames = tile.frames
