@@ -123,6 +123,9 @@ function MapData.RestoreImageRegistry(registry)
             elseif reg.region then
                 t.rect = reg.region
             end
+            if reg.renderMode then
+                t.renderMode = reg.renderMode
+            end
             
             if t.rect and not t.frames then
                 if not tilesetsByPath[t.imagePath] then
@@ -1043,6 +1046,14 @@ local function collectLayerTiles(layerData)
                     if tileType.tag and tileType.tag ~= "" then
                         entry.tag = tileType.tag
                     end
+                    if tileType.scale then entry.scale = tileType.scale end
+                    if tileType.frames then
+                        entry.frames = tileType.frames
+                        entry.fps = tileType.fps
+                    elseif tileType.rect then
+                        entry.rect = tileType.rect
+                    end
+                    if tileType.renderMode then entry.renderMode = tileType.renderMode end
                 end
                 tiles[#tiles + 1] = entry
             end
@@ -1074,6 +1085,20 @@ local function restoreLayerTiles(layerData, tileList)
                 storeID = id | FLIP
             end
             layerData[y][x] = storeID
+            
+            -- 如果是图片瓦片且带有额外的独立属性，则覆盖注册表中的默认属性
+            local tileType = MapData.TILE_TYPES[id]
+            if tileType and (t.scale or t.frames or t.rect or t.renderMode) then
+                if t.scale then tileType.scale = t.scale end
+                if t.frames then
+                    tileType.frames = t.frames
+                    tileType.fps = t.fps
+                elseif t.rect then
+                    tileType.rect = t.rect
+                end
+                if t.renderMode then tileType.renderMode = t.renderMode end
+            end
+            
             count = count + 1
         end
     end
@@ -1105,12 +1130,21 @@ function MapData.Save()
     for _, imgID in ipairs(MapData.imageTileIDs) do
         local t = MapData.TILE_TYPES[imgID]
         if t then
-            imageRegistry[#imageRegistry + 1] = {
+            local entry = {
                 id = imgID,
                 name = t.name,
                 imagePath = t.imagePath,
                 tag = (t.tag and t.tag ~= "") and t.tag or nil,
             }
+            if t.scale then entry.scale = t.scale end
+            if t.frames then
+                entry.frames = t.frames
+                entry.fps = t.fps
+            elseif t.rect then
+                entry.rect = t.rect
+            end
+            if t.renderMode then entry.renderMode = t.renderMode end
+            imageRegistry[#imageRegistry + 1] = entry
         end
     end
 
@@ -1330,12 +1364,14 @@ function MapData.SaveToNamedFile(filename)
                 id = imgID, name = t.name, imagePath = t.imagePath,
                 tag = (t.tag and t.tag ~= "") and t.tag or nil,
             }
+            if t.scale then entry.scale = t.scale end
             if t.frames then
                 entry.frames = t.frames
                 entry.fps = t.fps
             elseif t.rect then
                 entry.rect = t.rect
             end
+            if t.renderMode then entry.renderMode = t.renderMode end
             imageRegistry[#imageRegistry + 1] = entry
         end
     end
@@ -1655,7 +1691,7 @@ function MapData.LoadFromProject()
         return false
     end
 
-    -- v4: 多层
+    -- v4: 动态多层
     if mapModule.layers then
         MapData.layers = {}
         local totalCount = 0

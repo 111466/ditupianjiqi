@@ -375,46 +375,104 @@ local function CreateToolbar()
                 textColor = { 255, 255, 255, 255 },
                 borderRadius = 6,
                 onClick = function()
-                    local jsonStr = cjson.encode(cjson.decode(
-                        -- 用 Save 序列化得到当前场景 JSON
-                        (function()
-                            local layersData = {}
-                            for i, layer in ipairs(MapData.layers) do
-                                local tiles = {}
-                                for y = 1, MapData.MAP_H do
-                                    if layer.data[y] then
-                                        for x = 1, MapData.MAP_W do
-                                            local rawID = layer.data[y][x] or 0
-                                            if rawID > 0 then
-                                                local baseID = rawID & MapData.BASE_ID_MASK
-                                                local flipH = (rawID & MapData.FLIP_H_BIT) ~= 0
-                                                local t = MapData.TILE_TYPES[baseID]
-                                                local entry = { x = x, y = y, id = baseID }
-                                                if flipH then entry.flipH = true end
-                                                if t and t.imagePath then entry.path = t.imagePath end
-                                                if t and t.tag and t.tag ~= "" then entry.tag = t.tag end
-                                                tiles[#tiles + 1] = entry
-                                            end
+                    -- 复用 MapData 的保存逻辑来生成完整 JSON
+                    local layersData = {}
+                    for i, layer in ipairs(MapData.layers) do
+                        local tiles = {}
+                        for y = 1, MapData.MAP_H do
+                            if layer.data[y] then
+                                for x = 1, MapData.MAP_W do
+                                    local rawID = layer.data[y][x] or 0
+                                    if rawID > 0 then
+                                        local baseID = rawID & MapData.BASE_ID_MASK
+                                        local flipH = (rawID & MapData.FLIP_H_BIT) ~= 0
+                                        local t = MapData.TILE_TYPES[baseID]
+                                        local entry = { x = x, y = y, id = baseID }
+                                        if flipH then entry.flipH = true end
+                                        if t and t.imagePath then entry.path = t.imagePath end
+                                        if t and t.tag and t.tag ~= "" then entry.tag = t.tag end
+                                        
+                                        -- 适配最新的代码逻辑：瓦片放大倍数渲染、序列帧渲染、瓦片图集渲染等
+                                        if t and t.scale then entry.scale = t.scale end
+                                        if t and t.frames then 
+                                            entry.frames = t.frames
+                                            entry.fps = t.fps
+                                        elseif t and t.rect then
+                                            entry.rect = t.rect
                                         end
+                                        if t and t.renderMode then entry.renderMode = t.renderMode end
+                                        
+                                        tiles[#tiles + 1] = entry
                                     end
                                 end
-                                layersData[i] = {
-                                    name = layer.name, tiles = tiles,
-                                    visible = layer.visible ~= false,
-                                    locked = layer.locked == true,
-                                    opacity = layer.opacity or 1.0,
-                                    groupId = layer.groupId,
-                                    tag = (layer.tag and layer.tag ~= "") and layer.tag or nil,
-                                }
                             end
-                            local data = {
-                                version = 4,
-                                width = MapData.MAP_W, height = MapData.MAP_H,
-                                layers = layersData,
+                        end
+                        layersData[i] = {
+                            name = layer.name, tiles = tiles,
+                            visible = layer.visible ~= false,
+                            locked = layer.locked == true,
+                            opacity = layer.opacity or 1.0,
+                            groupId = layer.groupId,
+                            tag = (layer.tag and layer.tag ~= "") and layer.tag or nil,
+                        }
+                    end
+
+                    local imageRegistry = {}
+                    for _, imgID in ipairs(MapData.imageTileIDs) do
+                        local t = MapData.TILE_TYPES[imgID]
+                        if t then
+                            local entry = {
+                                id = imgID, name = t.name, imagePath = t.imagePath,
+                                tag = (t.tag and t.tag ~= "") and t.tag or nil,
                             }
-                            return cjson.encode(data)
-                        end)()
-                    ))
+                            if t.scale then entry.scale = t.scale end
+                            if t.frames then
+                                entry.frames = t.frames
+                                entry.fps = t.fps
+                            elseif t.rect then
+                                entry.rect = t.rect
+                            end
+                            if t.renderMode then entry.renderMode = t.renderMode end
+                            imageRegistry[#imageRegistry + 1] = entry
+                        end
+                    end
+
+                    local tileCustomizations = {}
+                    local defaultNames = { [1] = "草地", [2] = "水面", [3] = "沙地", [4] = "石头", [5] = "泥土" }
+                    for id = 1, MapData.TILE_COUNT do
+                        local t = MapData.TILE_TYPES[id]
+                        if t then
+                            local hasCustom = false
+                            local entry = { id = id }
+                            if t.name ~= (defaultNames[id] or "") then entry.name = t.name; hasCustom = true end
+                            if t.tag and t.tag ~= "" then entry.tag = t.tag; hasCustom = true end
+                            if hasCustom then tileCustomizations[#tileCustomizations + 1] = entry end
+                        end
+                    end
+
+                    local walkRulesData = nil
+                    if next(MapData.walkRules) then
+                        walkRulesData = {}
+                        for tag, walkable in pairs(MapData.walkRules) do
+                            walkRulesData[tag] = walkable
+                        end
+                    end
+
+                    local data = {
+                        version = 4,
+                        width = MapData.MAP_W, height = MapData.MAP_H,
+                        showGrid = MapData.showGrid,
+                        layers = layersData,
+                        imageFolder = MapData.imageFolder ~= "" and MapData.imageFolder or nil,
+                        imageRegistry = #imageRegistry > 0 and imageRegistry or nil,
+                        tileCustomizations = #tileCustomizations > 0 and tileCustomizations or nil,
+                        groups = next(MapData.groups) and MapData.groups or nil,
+                        nextGroupId = MapData.nextGroupId,
+                        walkRules = walkRulesData,
+                        defaultWalkable = MapData.defaultWalkable,
+                    }
+
+                    local jsonStr = cjson.encode(data)
 
                     local exportModal = UI.Modal {
                         title = "导出 JSON",
@@ -568,7 +626,22 @@ local function CreateToolbar()
                                 for _, tile in ipairs(layerInfo.tiles) do
                                     if tile.x >= 1 and tile.x <= MapData.MAP_W
                                        and tile.y >= 1 and tile.y <= MapData.MAP_H then
-                                        grid[tile.y][tile.x] = tile.id
+                                        
+                                        local storeID = tile.id
+                                        if tile.flipH then storeID = storeID | MapData.FLIP_H_BIT end
+                                        grid[tile.y][tile.x] = storeID
+                                        
+                                        local tileType = MapData.TILE_TYPES[tile.id]
+                                        if tileType and (tile.scale or tile.frames or tile.rect or tile.renderMode) then
+                                            if tile.scale then tileType.scale = tile.scale end
+                                            if tile.frames then
+                                                tileType.frames = tile.frames
+                                                tileType.fps = tile.fps
+                                            elseif tile.rect then
+                                                tileType.rect = tile.rect
+                                            end
+                                            if tile.renderMode then tileType.renderMode = tile.renderMode end
+                                        end
                                     end
                                 end
                             end
