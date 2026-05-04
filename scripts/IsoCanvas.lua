@@ -227,7 +227,7 @@ local function drawImageTile(nvg, cx, cy, imagePath, flipH, tileType)
     local renderMode = tileType and tileType.renderMode or "vertical"
     -- 针对地面铺设的瓦片（未手动配置 scale 的情况），增加少量重叠（5%）以消除抗锯齿缝隙
     if (renderMode == "flat" or renderMode == "floor") and not (tileType and tileType.scale) then
-        scaleFactor = 1.05
+        scaleFactor = 1.1
     end
 
     local pxScale = (oneTileW / BASE_PX_PER_TILE) * scaleFactor
