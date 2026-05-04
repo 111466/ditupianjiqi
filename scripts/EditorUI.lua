@@ -917,6 +917,220 @@ local tilesetDrag = {
     startX = 0, startY = 0,
     panelStartX = 0, panelStartY = 0
 }
+local TilesetViewWidget = nil
+
+local function buildTilesetMeta(tileset)
+    if tileset._uiMeta then
+        return tileset._uiMeta
+    end
+
+    local maxW = 0
+    local maxH = 0
+    local tileByID = {}
+    local uniformW = nil
+    local uniformH = nil
+    local gridEligible = true
+
+    for _, tile in ipairs(tileset.tiles or {}) do
+        local rect = tile.rect
+        if rect then
+            tileByID[tile.id] = tile
+            if rect.x + rect.w > maxW then maxW = rect.x + rect.w end
+            if rect.y + rect.h > maxH then maxH = rect.y + rect.h end
+
+            if not uniformW then
+                uniformW = rect.w
+                uniformH = rect.h
+            elseif uniformW ~= rect.w or uniformH ~= rect.h then
+                gridEligible = false
+            end
+
+            if rect.w <= 0 or rect.h <= 0 or rect.x % rect.w ~= 0 or rect.y % rect.h ~= 0 then
+                gridEligible = false
+            end
+        else
+            gridEligible = false
+        end
+    end
+
+    if maxW == 0 or maxH == 0 then
+        maxW = 512
+        maxH = 512
+    end
+
+    local meta = {
+        maxW = maxW,
+        maxH = maxH,
+        tileByID = tileByID,
+        grid = nil,
+    }
+
+    if gridEligible and uniformW and uniformH then
+        local cols = math.max(1, math.ceil(maxW / uniformW))
+        local cells = {}
+        local gridOK = true
+
+        for _, tile in ipairs(tileset.tiles or {}) do
+            local rect = tile.rect
+            local col = math.floor(rect.x / uniformW)
+            local row = math.floor(rect.y / uniformH)
+            local idx = row * cols + col + 1
+            if cells[idx] then
+                gridOK = false
+                break
+            end
+            cells[idx] = tile
+        end
+
+        if gridOK then
+            meta.grid = {
+                cellW = uniformW,
+                cellH = uniformH,
+                cols = cols,
+                cells = cells,
+            }
+        end
+    end
+
+    tileset._uiMeta = meta
+    return meta
+end
+
+local function findTilesetTileAt(tileset, meta, localX, localY)
+    if not meta then return nil end
+    if localX < 0 or localY < 0 or localX >= meta.maxW or localY >= meta.maxH then
+        return nil
+    end
+
+    if meta.grid then
+        local col = math.floor(localX / meta.grid.cellW)
+        local row = math.floor(localY / meta.grid.cellH)
+        local idx = row * meta.grid.cols + col + 1
+        local tile = meta.grid.cells[idx]
+        if tile and tile.rect then
+            local rect = tile.rect
+            if localX >= rect.x and localX < rect.x + rect.w
+               and localY >= rect.y and localY < rect.y + rect.h then
+                return tile
+            end
+        end
+    end
+
+    for _, tile in ipairs(tileset.tiles or {}) do
+        local rect = tile.rect
+        if rect
+           and localX >= rect.x and localX < rect.x + rect.w
+           and localY >= rect.y and localY < rect.y + rect.h then
+            return tile
+        end
+    end
+
+    return nil
+end
+
+local function drawTilesetHighlight(nvg, layout, rect, fillColor, strokeColor, strokeWidth)
+    if not rect then return end
+    strokeWidth = strokeWidth or 1
+
+    nvgBeginPath(nvg)
+    nvgRect(nvg, layout.x + rect.x, layout.y + rect.y, rect.w, rect.h)
+    nvgFillColor(nvg, nvgRGBA(fillColor[1], fillColor[2], fillColor[3], fillColor[4]))
+    nvgFill(nvg)
+
+    nvgBeginPath(nvg)
+    nvgRect(nvg, layout.x + rect.x + 0.5, layout.y + rect.y + 0.5, rect.w - 1, rect.h - 1)
+    nvgStrokeColor(nvg, nvgRGBA(strokeColor[1], strokeColor[2], strokeColor[3], strokeColor[4]))
+    nvgStrokeWidth(nvg, strokeWidth)
+    nvgStroke(nvg)
+end
+
+local function drawTilesetSelectionEffect(nvg, layout, rect)
+    if not rect then return end
+
+    local x = layout.x + rect.x
+    local y = layout.y + rect.y
+    local w = rect.w
+    local h = rect.h
+    local corner = math.max(4, math.min(w, h) * 0.35)
+
+    -- 选中底色，让 tile 在复杂图集中也能被看清
+    nvgBeginPath(nvg)
+    nvgRect(nvg, x, y, w, h)
+    nvgFillColor(nvg, nvgRGBA(59, 130, 246, 80))
+    nvgFill(nvg)
+
+    -- 外层亮边
+    nvgBeginPath(nvg)
+    nvgRect(nvg, x + 0.5, y + 0.5, w - 1, h - 1)
+    nvgStrokeColor(nvg, nvgRGBA(255, 255, 255, 255))
+    nvgStrokeWidth(nvg, 2)
+    nvgStroke(nvg)
+
+    -- 内层强调边
+    if w > 4 and h > 4 then
+        nvgBeginPath(nvg)
+        nvgRect(nvg, x + 2.5, y + 2.5, w - 5, h - 5)
+        nvgStrokeColor(nvg, nvgRGBA(59, 130, 246, 255))
+        nvgStrokeWidth(nvg, 2)
+        nvgStroke(nvg)
+    end
+
+    -- 左上角标记
+    nvgBeginPath(nvg)
+    nvgMoveTo(nvg, x, y)
+    nvgLineTo(nvg, x + corner, y)
+    nvgLineTo(nvg, x, y + corner)
+    nvgClosePath(nvg)
+    nvgFillColor(nvg, nvgRGBA(255, 215, 0, 230))
+    nvgFill(nvg)
+end
+
+local function ensureTilesetViewWidget()
+    if TilesetViewWidget then return end
+    local Widget = require("urhox-libs/UI/Core/Widget")
+    TilesetViewWidget = Widget:Extend("TilesetViewWidget")
+
+    function TilesetViewWidget:Render(nvg)
+        self:RenderFullBackground(nvg)
+
+        local tileset = self.props._tileset
+        local meta = self.props._tilesetMeta
+        if not tileset or not meta then return end
+
+        local l = self:GetAbsoluteLayout()
+        if not imageTileButtonCache[tileset.imagePath] then
+            imageTileButtonCache[tileset.imagePath] = nvgCreateImage(nvg, tileset.imagePath, 0)
+        end
+        local handle = imageTileButtonCache[tileset.imagePath]
+        if handle and handle ~= 0 then
+            if not imageSizeCache[handle] then
+                local iw, ih = nvgImageSize(nvg, handle)
+                imageSizeCache[handle] = { w = iw, h = ih }
+            end
+            local imgInfo = imageSizeCache[handle]
+            local paint = nvgImagePattern(nvg, l.x, l.y, imgInfo.w, imgInfo.h, 0, handle, 1.0)
+            nvgBeginPath(nvg)
+            nvgRect(nvg, l.x, l.y, l.w, l.h)
+            nvgFillPaint(nvg, paint)
+            nvgFill(nvg)
+        end
+
+        local selected = meta.tileByID[selectedTileID]
+        if selected and selected.rect then
+            drawTilesetSelectionEffect(nvg, l, selected.rect)
+        end
+
+        local hovered = self._hoverTile
+        if hovered and hovered.rect and hovered.id ~= selectedTileID then
+            drawTilesetHighlight(
+                nvg, l, hovered.rect,
+                { 255, 255, 255, 35 },
+                { 255, 255, 255, 180 },
+                1
+            )
+        end
+    end
+end
 
 local function closeTilesetPanel()
     if activeTilesetPanel then
@@ -934,83 +1148,50 @@ showTilesetModal = function(tileset)
     closeTilesetPanel()
     activeTilesetData = tileset
 
-    local maxW = 0
-    local maxH = 0
-    for _, tile in ipairs(tileset.tiles) do
-        if tile.rect then
-            if tile.rect.x + tile.rect.w > maxW then maxW = tile.rect.x + tile.rect.w end
-            if tile.rect.y + tile.rect.h > maxH then maxH = tile.rect.y + tile.rect.h end
-        end
-    end
-    
-    if maxW == 0 or maxH == 0 then
-        maxW = 512
-        maxH = 512
-    end
+    local meta = buildTilesetMeta(tileset)
+    ensureTilesetViewWidget()
 
-    local container = UI.Panel {
-        width = maxW,
-        height = maxH,
-        position = "relative",
-    }
+    local bgPanel = TilesetViewWidget {
+        width = meta.maxW,
+        height = meta.maxH,
+        backgroundColor = { 24, 26, 30, 255 },
+        _tileset = tileset,
+        _tilesetMeta = meta,
+        onPointerDown = function(event, widget)
+            if event.button ~= MOUSEB_LEFT then
+                return
+            end
 
-    for _, tile in ipairs(tileset.tiles) do
-        if tile.rect then
-            local btn = UI.Button {
-                position = "absolute",
-                left = tile.rect.x,
-                top = tile.rect.y,
-                width = tile.rect.w,
-                height = tile.rect.h,
-                minWidth = 0,
-                minHeight = 0,
-                padding = 0,
-                paddingHorizontal = 0,
-                paddingVertical = 0,
-                margin = 0,
-                backgroundColor = { 0, 0, 0, 0 },
-                hoverColor = { 255, 255, 255, 60 },
-                activeColor = { 255, 255, 255, 100 },
-                borderColor = { 255, 255, 255, 100 },
-                borderWidth = 1,
-                onClick = function()
-                    selectTile(tile.id)
-                end
-            }
-            container:AddChild(btn)
-        end
-    end
-
-    local Widget = require("urhox-libs/UI/Core/Widget")
-    local TilesetBackgroundWidget = Widget:Extend("TilesetBackgroundWidget")
-    function TilesetBackgroundWidget:Render(nvg)
-        self:RenderFullBackground(nvg)
-        local l = self:GetAbsoluteLayout()
-        if not imageTileButtonCache[tileset.imagePath] then
-            imageTileButtonCache[tileset.imagePath] = nvgCreateImage(nvg, tileset.imagePath, 0)
-        end
-        local handle = imageTileButtonCache[tileset.imagePath]
-        if handle and handle ~= 0 then
-            local iw, ih = nvgImageSize(nvg, handle)
-            local paint = nvgImagePattern(nvg, l.x, l.y, iw, ih, 0, handle, 1.0)
-            nvgBeginPath(nvg)
-            nvgRect(nvg, l.x, l.y, l.w, l.h)
-            nvgFillPaint(nvg, paint)
-            nvgFill(nvg)
-        end
-    end
-
-    local bgPanel = TilesetBackgroundWidget {
-        width = maxW,
-        height = maxH,
-        children = { container }
+            local layout = widget:GetAbsoluteLayout()
+            local localX = event.x - layout.x
+            local localY = event.y - layout.y
+            local tile = findTilesetTileAt(tileset, meta, localX, localY)
+            widget._hoverTile = tile
+            if tile then
+                selectTile(tile.id)
+            end
+        end,
+        onPointerMove = function(event, widget)
+            local layout = widget:GetAbsoluteLayout()
+            local localX = event.x - layout.x
+            local localY = event.y - layout.y
+            widget._hoverTile = findTilesetTileAt(tileset, meta, localX, localY)
+        end,
+        onPointerUp = function(event, widget)
+            if event.button == MOUSEB_LEFT then
+                local layout = widget:GetAbsoluteLayout()
+                local localX = event.x - layout.x
+                local localY = event.y - layout.y
+                widget._hoverTile = findTilesetTileAt(tileset, meta, localX, localY)
+            end
+        end,
     }
 
     -- 构建悬浮窗（带标题栏拖拽）
     activeTilesetPanel = UI.Panel {
         position = "absolute",
-        left = graphics.width / UI.GetScale() / 2 - math.min(maxW, 600) / 2,
-        top = graphics.height / UI.GetScale() / 2 - math.min(maxH, 600) / 2,
+        left = graphics.width / UI.GetScale() / 2 - math.min(meta.maxW, 600) / 2,
+        top = graphics.height / UI.GetScale() / 2 - math.min(meta.maxH, 600) / 2,
         backgroundColor = { 40, 42, 48, 255 },
         borderColor = { 80, 80, 90, 255 },
         borderWidth = 1,
@@ -1045,8 +1226,8 @@ showTilesetModal = function(tileset)
             },
             -- 滚动内容区
             UI.Panel {
-                width = math.min(maxW + 20, 600),
-                height = math.min(maxH + 20, 600),
+                width = math.min(meta.maxW + 20, 600),
+                height = math.min(meta.maxH + 20, 600),
                 overflow = "scroll",
                 padding = 10,
                 children = { bgPanel }
