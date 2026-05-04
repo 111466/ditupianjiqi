@@ -1039,22 +1039,8 @@ local function collectLayerTiles(layerData)
                 local tileType = MapData.TILE_TYPES[baseID]
                 local entry = { x = x, y = y, id = baseID }
                 if flipH then entry.flipH = true end
-                if tileType then
-                    if tileType.imagePath then
-                        entry.path = tileType.imagePath
-                    end
-                    if tileType.tag and tileType.tag ~= "" then
-                        entry.tag = tileType.tag
-                    end
-                    if tileType.scale then entry.scale = tileType.scale end
-                    if tileType.frames then
-                        entry.frames = tileType.frames
-                        entry.fps = tileType.fps
-                    elseif tileType.rect then
-                        entry.rect = tileType.rect
-                    end
-                    if tileType.renderMode then entry.renderMode = tileType.renderMode end
-                end
+                -- 【优化】不再往单个 tile 中写入冗余的渲染属性 (path, scale, frames, rect, renderMode 等)
+                -- 所有的渲染属性应该在运行时通过 id 去 imageRegistry 查找，以大幅减小 JSON 体积并保持数据一致性。
                 tiles[#tiles + 1] = entry
             end
         end
@@ -1578,19 +1564,10 @@ local function exportLayerToLua(layerData)
             if rawID > 0 then
                 local baseID = rawID & MASK
                 local flipH = (rawID & FLIP) ~= 0
-                local tileType = MapData.TILE_TYPES[baseID]
-                local tagStr = (tileType and tileType.tag and tileType.tag ~= "")
-                    and string.format(', tag = %q', tileType.tag) or ""
                 local flipStr = flipH and ", flipH = true" or ""
-                if tileType and tileType.imagePath then
-                    lines[#lines + 1] = string.format(
-                        '            { x = %d, y = %d, id = %d, path = %q%s%s },',
-                        x, y, baseID, tileType.imagePath, tagStr, flipStr)
-                else
-                    lines[#lines + 1] = string.format(
-                        '            { x = %d, y = %d, id = %d%s%s },',
-                        x, y, baseID, tagStr, flipStr)
-                end
+                lines[#lines + 1] = string.format(
+                    '            { x = %d, y = %d, id = %d%s },',
+                    x, y, baseID, flipStr)
             end
         end
     end
