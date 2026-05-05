@@ -2157,5 +2157,117 @@
         "h": 64
       }
     ]
+  },
+  {
+    "type": "tileset",
+    "image": "Clouds_01.png",
+    "tiles": [
+      {
+        "name": "云01",
+        "renderMode": "flat",
+        "x": 0,
+        "y": 0,
+        "w": 576,
+        "h": 256
+      }
+    ]
+  },
+  {
+    "type": "tileset",
+    "image": "Clouds_02.png",
+    "tiles": [
+      {
+        "name": "云02",
+        "renderMode": "flat",
+        "x": 0,
+        "y": 0,
+        "w": 576,
+        "h": 256
+      }
+    ]
+  },
+  {
+    "type": "tileset",
+    "image": "Clouds_03.png",
+    "tiles": [
+      {
+        "name": "云03",
+        "renderMode": "flat",
+        "x": 0,
+        "y": 0,
+        "w": 576,
+        "h": 256
+      }
+    ]
+  },
+  {
+    "type": "tileset",
+    "image": "Clouds_04.png",
+    "tiles": [
+      {
+        "name": "云04",
+        "renderMode": "flat",
+        "x": 0,
+        "y": 0,
+        "w": 576,
+        "h": 256
+      }
+    ]
+  },
+  {
+    "type": "tileset",
+    "image": "Clouds_05.png",
+    "tiles": [
+      {
+        "name": "云05",
+        "renderMode": "flat",
+        "x": 0,
+        "y": 0,
+        "w": 576,
+        "h": 256
+      }
+    ]
+  },
+  {
+    "type": "tileset",
+    "image": "Clouds_06.png",
+    "tiles": [
+      {
+        "name": "云06",
+        "renderMode": "flat",
+        "x": 0,
+        "y": 0,
+        "w": 576,
+        "h": 256
+      }
+    ]
+  },
+  {
+    "type": "tileset",
+    "image": "Clouds_07.png",
+    "tiles": [
+      {
+        "name": "云07",
+        "renderMode": "flat",
+        "x": 0,
+        "y": 0,
+        "w": 576,
+        "h": 256
+      }
+    ]
+  },
+  {
+    "type": "tileset",
+    "image": "Clouds_08.png",
+    "tiles": [
+      {
+        "name": "云08",
+        "renderMode": "flat",
+        "x": 0,
+        "y": 0,
+        "w": 576,
+        "h": 256
+      }
+    ]
   }
 ]
