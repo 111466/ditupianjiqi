@@ -523,6 +523,35 @@ function MapData.AddLayer(name, groupId)
     return idx
 end
 
+--- 在指定位置插入新层
+---@param index number 插入后的层索引 (1-based)
+---@param name string|nil 层名称（默认 "层 N"）
+---@param groupId number|nil 组 ID
+---@return number insertedIndex 实际插入索引
+function MapData.InsertLayer(index, name, groupId)
+    local count = #MapData.layers
+    local insertIndex = math.max(1, math.min(count + 1, math.floor(index or (count + 1))))
+    name = name or ("层 " .. insertIndex)
+
+    table.insert(MapData.layers, insertIndex, {
+        name = name,
+        data = createEmptyGrid(),
+        visible = true,
+        locked = false,
+        opacity = 1.0,
+        groupId = groupId or nil,
+        tag = "",
+    })
+
+    if MapData.currentLayerIndex >= insertIndex then
+        MapData.currentLayerIndex = MapData.currentLayerIndex + 1
+    end
+
+    print(string.format("[MapData] 插入层 %d: %s", insertIndex, name))
+    markDirty()
+    return insertIndex
+end
+
 --- 删除层（至少保留一层）
 ---@param index number 层索引 (1-based)
 ---@return boolean success

@@ -1842,6 +1842,8 @@ local function buildLayerRow(layerIdx, isPreview, indent)
     local isVisible = MapData.IsLayerVisible(layerIdx)
     local isLocked = MapData.IsLayerLocked(layerIdx)
     local opacity = MapData.GetLayerOpacity(layerIdx)
+    local curGroupId = MapData.GetLayerGroup(layerIdx)
+    local groupIDs = MapData.GetGroupIDs()
 
     local visBtn = SmallIconBtn(
         isVisible and "V" or "-", 22,
@@ -1881,6 +1883,15 @@ local function buildLayerRow(layerIdx, isPreview, indent)
         end
     )
 
+    local insertBtn = SmallIconBtn("+", 20,
+        { 46, 110, 62, 255 }, { 210, 255, 210, 255 },
+        function()
+            local newIndex = MapData.InsertLayer(layerIdx + 1, nil, curGroupId)
+            selectLayer(newIndex)
+            EditorUI.ShowToast("已插入: " .. MapData.GetLayerName(newIndex))
+        end
+    )
+
     local deleteBtn = SmallIconBtn("×", 22,
         { 80, 40, 40, 255 }, { 200, 100, 100, 255 },
         function()
@@ -1893,8 +1904,6 @@ local function buildLayerRow(layerIdx, isPreview, indent)
 
     -- 组分配按钮：已在组内 → 移出；未分组且有组 → 点击循环选组
     local groupBtn = nil
-    local curGroupId = MapData.GetLayerGroup(layerIdx)
-    local groupIDs = MapData.GetGroupIDs()
 
     if curGroupId then
         -- 已在组内，显示"移出"按钮
@@ -2013,7 +2022,7 @@ local function buildLayerRow(layerIdx, isPreview, indent)
         children = {
             UI.Panel {
                 flexDirection = "row", alignItems = "center", height = 26, gap = 2,
-                children = { visBtn, lockBtn, nameWidget, groupBtn, upBtn, downBtn, deleteBtn },
+                children = { visBtn, lockBtn, nameWidget, groupBtn, insertBtn, upBtn, downBtn, deleteBtn },
             },
             isActive and UI.Panel {
                 flexDirection = "row", alignItems = "center", height = 20, gap = 4, paddingLeft = 4,
