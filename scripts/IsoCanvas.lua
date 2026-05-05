@@ -18,8 +18,8 @@ local BASE_TILE_H_HALF = 16   -- 基础半高
 local BASE_TD_TILE_W = 40     -- 正视瓦片宽度
 local BASE_TD_TILE_H = 40     -- 正视瓦片高度（正方形）
 
--- 像素比基准：16px = 1个网格
-local BASE_PX_PER_TILE = 16
+-- 像素比基准：64px = 1个网格
+local BASE_PX_PER_TILE = 64
 
 -- 相机状态
 local camX = 0
@@ -225,9 +225,9 @@ local function drawImageTile(nvg, cx, cy, imagePath, flipH, tileType)
     local scaleFactor = tileType and tileType.scale or 1.0
     
     local renderMode = tileType and tileType.renderMode or "vertical"
-    -- 针对地面铺设的瓦片（未手动配置 scale 的情况），增加少量重叠（7%）以消除抗锯齿缝隙
+    -- 针对地面铺设的瓦片（未手动配置 scale 的情况），增加少量重叠（1.6%）以消除抗锯齿缝隙
     if (renderMode == "flat" or renderMode == "floor") and not (tileType and tileType.scale) then
-        scaleFactor = 1.07
+        scaleFactor = 1.016
     end
 
     local pxScale = (oneTileW / BASE_PX_PER_TILE) * scaleFactor
@@ -340,9 +340,9 @@ local function drawImageTileTD(nvg, cx, cy, imagePath, flipH, tileType)
     local scaleFactor = tileType and tileType.scale or 1.0
     local renderMode = tileType and tileType.renderMode or "vertical"
 
-    -- 针对地面铺设的瓦片（未手动配置 scale 的情况），增加少量重叠（7%）以消除抗锯齿缝隙
+    -- 针对地面铺设的瓦片（未手动配置 scale 的情况），增加少量重叠（1.6%）以消除抗锯齿缝隙
     if (renderMode == "flat" or renderMode == "floor") and not (tileType and tileType.scale) then
-        scaleFactor = 1.07
+        scaleFactor = 1.016
     end
 
     local pxScale = (tdTileW / BASE_PX_PER_TILE) * scaleFactor
