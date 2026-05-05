@@ -2012,6 +2012,15 @@ local function buildLayerRow(layerIdx, isPreview, indent)
         }
     end
 
+    local rowChildren = { visBtn, lockBtn, nameWidget }
+    if groupBtn then
+        rowChildren[#rowChildren + 1] = groupBtn
+    end
+    rowChildren[#rowChildren + 1] = insertBtn
+    rowChildren[#rowChildren + 1] = upBtn
+    rowChildren[#rowChildren + 1] = downBtn
+    rowChildren[#rowChildren + 1] = deleteBtn
+
     return UI.Panel {
         gap = 1,
         paddingHorizontal = 2,
@@ -2022,7 +2031,7 @@ local function buildLayerRow(layerIdx, isPreview, indent)
         children = {
             UI.Panel {
                 flexDirection = "row", alignItems = "center", height = 26, gap = 2,
-                children = { visBtn, lockBtn, nameWidget, groupBtn, insertBtn, upBtn, downBtn, deleteBtn },
+                children = rowChildren,
             },
             isActive and UI.Panel {
                 flexDirection = "row", alignItems = "center", height = 20, gap = 4, paddingLeft = 4,
