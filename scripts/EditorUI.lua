@@ -2628,6 +2628,84 @@ local function CreateLayerPanel()
                             },
                         },
                     },
+                    -- 方向扩展按钮
+                    UI.Panel {
+                        flexDirection = "column",
+                        alignItems = "center",
+                        gap = 2,
+                        children = {
+                            UI.Button {
+                                text = "↑ 上",
+                                width = 48,
+                                height = 22,
+                                fontSize = 10,
+                                backgroundColor = { 59, 130, 246, 255 },
+                                textColor = { 255, 255, 255, 255 },
+                                borderRadius = 4,
+                                onClick = function()
+                                    if MapData.ExpandTop() then
+                                        EditorUI.ShowToast("向上扩展一行")
+                                        updateMapSizeLabel()
+                                        IsoCanvas.ResetCamera()
+                                    end
+                                end,
+                            },
+                            UI.Panel {
+                                flexDirection = "row",
+                                gap = 2,
+                                children = {
+                                    UI.Button {
+                                        text = "← 左",
+                                        width = 48,
+                                        height = 22,
+                                        fontSize = 10,
+                                        backgroundColor = { 59, 130, 246, 255 },
+                                        textColor = { 255, 255, 255, 255 },
+                                        borderRadius = 4,
+                                        onClick = function()
+                                            if MapData.ExpandLeft() then
+                                                EditorUI.ShowToast("向左扩展一列")
+                                                updateMapSizeLabel()
+                                                IsoCanvas.ResetCamera()
+                                            end
+                                        end,
+                                    },
+                                    UI.Button {
+                                        text = "右 →",
+                                        width = 48,
+                                        height = 22,
+                                        fontSize = 10,
+                                        backgroundColor = { 59, 130, 246, 255 },
+                                        textColor = { 255, 255, 255, 255 },
+                                        borderRadius = 4,
+                                        onClick = function()
+                                            if MapData.ExpandRight() then
+                                                EditorUI.ShowToast("向右扩展一列")
+                                                updateMapSizeLabel()
+                                                IsoCanvas.ResetCamera()
+                                            end
+                                        end,
+                                    },
+                                },
+                            },
+                            UI.Button {
+                                text = "↓ 下",
+                                width = 48,
+                                height = 22,
+                                fontSize = 10,
+                                backgroundColor = { 59, 130, 246, 255 },
+                                textColor = { 255, 255, 255, 255 },
+                                borderRadius = 4,
+                                onClick = function()
+                                    if MapData.ExpandBottom() then
+                                        EditorUI.ShowToast("向下扩展一行")
+                                        updateMapSizeLabel()
+                                        IsoCanvas.ResetCamera()
+                                    end
+                                end,
+                            },
+                        },
+                    },
                 },
             },
         },

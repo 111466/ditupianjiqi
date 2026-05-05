@@ -975,6 +975,86 @@ function MapData.ResizeMap(newW, newH)
     return true
 end
 
+--- 调整地图尺寸（支持对齐方式）
+---@param newW number 新宽度 (&gt;=2, &lt;=100)
+---@param newH number 新高度 (&gt;=2, &lt;=100)
+---@param align? string 对齐方式: "topleft"（默认）| "topright" | "bottomleft" | "bottomright" | "top" | "bottom" | "left" | "right"
+---@return boolean success
+function MapData.ResizeMapWithAlign(newW, newH, align)
+    newW = math.max(2, math.min(100, math.floor(newW)))
+    newH = math.max(2, math.min(100, math.floor(newH)))
+    align = align or "topleft"
+
+    if newW == MapData.MAP_W and newH == MapData.MAP_H then
+        return false
+    end
+
+    local oldW = MapData.MAP_W
+    local oldH = MapData.MAP_H
+
+    local offsetX = 0
+    local offsetY = 0
+
+    if align == "topright" or align == "right" then
+        offsetX = newW - oldW
+    elseif align == "bottomleft" or align == "bottom" then
+        offsetY = newH - oldH
+    elseif align == "bottomright" then
+        offsetX = newW - oldW
+        offsetY = newH - oldH
+    end
+
+    for _, layer in ipairs(MapData.layers) do
+        local newGrid = {}
+        for y = 1, newH do
+            newGrid[y] = {}
+            for x = 1, newW do
+                local oldX = x - offsetX
+                local oldY = y - offsetY
+                if oldY &gt;= 1 and oldY &lt;= oldH and oldX &gt;= 1 and oldX &lt;= oldW then
+                    newGrid[y][x] = layer.data[oldY][oldX]
+                else
+                    newGrid[y][x] = 0
+                end
+            end
+        end
+        layer.data = newGrid
+    end
+
+    MapData.MAP_W = newW
+    MapData.MAP_H = newH
+
+    MapData.ClearHistory()
+    markDirty()
+
+    print(string.format("[MapData] 地图尺寸: %dx%d → %dx%d (align=%s)", oldW, oldH, newW, newH, align))
+    return true
+end
+
+--- 向上扩展一行
+---@return boolean success
+function MapData.ExpandTop()
+    return MapData.ResizeMapWithAlign(MapData.MAP_W, MapData.MAP_H + 1, "bottom")
+end
+
+--- 向下扩展一行
+---@return boolean success
+function MapData.ExpandBottom()
+    return MapData.ResizeMapWithAlign(MapData.MAP_W, MapData.MAP_H + 1, "topleft")
+end
+
+--- 向左扩展一列
+---@return boolean success
+function MapData.ExpandLeft()
+    return MapData.ResizeMapWithAlign(MapData.MAP_W + 1, MapData.MAP_H, "right")
+end
+
+--- 向右扩展一列
+---@return boolean success
+function MapData.ExpandRight()
+    return MapData.ResizeMapWithAlign(MapData.MAP_W + 1, MapData.MAP_H, "topleft")
+end
+
 --- 获取当前层名称
 ---@return string
 function MapData.GetCurrentLayerName()
